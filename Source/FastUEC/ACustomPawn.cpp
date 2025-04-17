@@ -156,7 +156,7 @@ void ACustomPawn::OnLeftMousePressedCube()
             }
         }
     }
-
+	/*
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(this);
 	
@@ -247,6 +247,7 @@ void ACustomPawn::OnLeftMousePressedCube()
 			}
 		}
 	}
+	*/
 }
 
 void ACustomPawn::UpdateCandidateIdealDirections()
