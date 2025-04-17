@@ -10,22 +10,6 @@ enum class ECubeAxis : uint8;
 
 #include "ACustomPawn.generated.h"
 
-// 定义候选面枚举
-UENUM(BlueprintType)
-enum class ECubeFace : uint8
-{
-    Front,
-    Back,
-    Left,
-    Right,
-    Top,
-    Bottom,
-    NonLeftNonRight,  // 非左非右面
-    NonTopNonBottom,  // 非上非下面
-    NonFrontNonBack,  // 非前非后面
-    Unknown
-};
-
 UCLASS()
 class FASTUEC_API ACustomPawn : public APawn
 {
@@ -49,18 +33,9 @@ protected:
 	void OnLeftMousePressedCube();
 	void OnLeftMouseReleasedCube();
 
-	void UpdateCandidateIdealDirections();
-    bool PerformLineTrace(FVector2D ScreenPosition, FHitResult& OutHitResult);
-    TArray<ECubeFace> CalculateCandidateFaces(int32 SelectedIndex, const TArray<int32>& CubeDims);
-    FString CubeFaceToString(ECubeFace Face);
-    void ShowDebugInfo(FVector2D DragDelta, ECubeFace TargetFace, float FinalAngle);
-
 	// 摄像机相关
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	bool bIsRotating;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
-	bool bCameraMoved; // 镜头是否发生变化
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
 	float MinPitch;
@@ -104,14 +79,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MagicCube|Interaction")
 	FVector HitNormal;
 
-	// 配置参数
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drag Settings", meta = (AllowPrivateAccess = "true"))
-    float DragSensitivity;
-
 	// 连续拖拽时保存当前状态
 	FString CurrentTargetFace;        // 固定的目标面
 	ECubeAxis CurrentRotateAxis;        // 当前旋转轴
 	int32 CurrentLayerIndex;            // 当前旋转层索引
 	float CurrentDragAngle;             // 当前拖拽计算出的旋转角度
-	TMap<ECubeFace, FVector2D> CandidateIdealDirections;
 };

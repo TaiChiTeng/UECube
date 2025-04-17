@@ -5,7 +5,6 @@
 #include "Components/InputComponent.h"
 #include "Components/SceneComponent.h"
 #include "Engine/Engine.h"
-#include "GameFramework/PlayerController.h"
 #include "DrawDebugHelpers.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "EngineUtils.h"
@@ -35,8 +34,6 @@ ACustomPawn::ACustomPawn()
 	// 初始状态
 	bIsRotating = false;
 	bIsCubeDrag = false;
-	bCameraMoved = false;
-	DragSensitivity = 150.f; // 默认灵敏度
 	MinPitch = -50.f;
 	MaxPitch = 45.f;
 	
@@ -80,16 +77,8 @@ void ACustomPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 //////////////////////////////////////////////////////////////////////////
 // 摄像机控制
 //////////////////////////////////////////////////////////////////////////
-void ACustomPawn::OnRightMousePressed()
-{
-	bIsRotating = true;
-	bCameraMoved = true; // 标记镜头发生变化
-}
-void ACustomPawn::OnRightMouseReleased()
-{
-	bIsRotating = false;
-	bCameraMoved = true; // 标记镜头发生变化
-}
+void ACustomPawn::OnRightMousePressed() { bIsRotating = true; }
+void ACustomPawn::OnRightMouseReleased() { bIsRotating = false; }
 
 void ACustomPawn::Turn(float AxisValue)
 {
@@ -98,7 +87,6 @@ void ACustomPawn::Turn(float AxisValue)
 		FRotator CurrRot = SpringArm->GetComponentRotation();
 		CurrRot.Yaw += AxisValue;
 		SpringArm->SetWorldRotation(CurrRot);
-		bCameraMoved = true; // 标记镜头发生变化
 	}
 }
 
@@ -110,7 +98,6 @@ void ACustomPawn::LookUp(float AxisValue)
 		float NewPitch = FMath::Clamp(CurrRot.Pitch + AxisValue, MinPitch, MaxPitch);
 		CurrRot.Pitch = NewPitch;
 		SpringArm->SetWorldRotation(CurrRot);
-		bCameraMoved = true; // 标记镜头发生变化
 	}
 }
 
@@ -142,21 +129,6 @@ void ACustomPawn::OnLeftMousePressedCube()
 	if (!PC->DeprojectScreenPositionToWorld(MouseX, MouseY, WorldOrigin, WorldDirection)) return;
 	FVector TraceEnd = WorldOrigin + WorldDirection * 10000.f;
 	FHitResult HitResult;
-	if (PerformLineTrace(CubeDragStartScreen, HitResult))
-    {
-        // 获取选中块的索引
-        if (UInstancedStaticMeshComponent* ISMC = Cast<UInstancedStaticMeshComponent>(HitResult.GetComponent()))
-        {
-            SelectedCubeInstanceIndex = HitResult.Item;
-
-            // 获取魔方维度并计算候选面
-            if (AMagicCubeActor* CubeActor = GetMagicCubeActor())
-            {
-                SelectedCandidateFaces = CalculateCandidateFaces(SelectedCubeInstanceIndex, CubeActor->Dimensions);
-            }
-        }
-    }
-	/*
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(this);
 	
@@ -173,6 +145,7 @@ void ACustomPawn::OnLeftMousePressedCube()
 				SelectedCubeInstanceIndex = HitResult.Item;
 				FTransform InstTrans;
 				ISMC->GetInstanceTransform(SelectedCubeInstanceIndex, InstTrans, true);
+				SelectedBlockLocalPos = InstTrans.GetLocation();
 				
 				// 这里不再依赖块位置的绝对值，而是依据选中块的 index 生成候选面
 				AMagicCubeActor* CubeActor = nullptr;
@@ -247,111 +220,6 @@ void ACustomPawn::OnLeftMousePressedCube()
 			}
 		}
 	}
-	*/
-}
-
-void ACustomPawn::UpdateCandidateIdealDirections()
-{
-    APlayerController* PC = Cast<APlayerController>(GetController());
-    if (!PC) return;
-
-    FVector CubeCenter = GetActorLocation();
-
-    TMap<ECubeFace, FVector> FaceNormals = {
-        {ECubeFace::Front, FVector(-1, 0, 0)},
-        {ECubeFace::Back, FVector(1, 0, 0)},
-        {ECubeFace::Left, FVector(0, -1, 0)},
-        {ECubeFace::Right, FVector(0, 1, 0)},
-        {ECubeFace::Top, FVector(0, 0, 1)},
-        {ECubeFace::Bottom, FVector(0, 0, -1)}
-    };
-
-    CandidateIdealDirections.Empty();
-    for (const auto& Face : FaceNormals)
-    {
-        FVector WorldDirection = CubeCenter + Face.Value * 100.f;
-        FVector2D ScreenCenter, ScreenDir;
-        if (PC->ProjectWorldLocationToScreen(CubeCenter, ScreenCenter) &&
-            PC->ProjectWorldLocationToScreen(WorldDirection, ScreenDir))
-        {
-            CandidateIdealDirections.Add(Face.Key, (ScreenDir - ScreenCenter).GetSafeNormal());
-        }
-    }
-}
-
-bool ACustomPawn::PerformLineTrace(FVector2D ScreenPosition, FHitResult& OutHitResult)
-{
-    APlayerController* PC = Cast<APlayerController>(GetController());
-    if (!PC) return false;
-
-    FVector WorldOrigin, WorldDirection;
-    if (PC->DeprojectScreenPositionToWorld(ScreenPosition.X, ScreenPosition.Y, WorldOrigin, WorldDirection))
-    {
-        FVector TraceEnd = WorldOrigin + WorldDirection * 10000.f;
-        FCollisionQueryParams Params;
-        Params.AddIgnoredActor(this);
-
-        return GetWorld()->LineTraceSingleByChannel(OutHitResult, WorldOrigin, TraceEnd, ECC_Visibility, Params);
-    }
-    return false;
-}
-
-TArray<ECubeFace> ACustomPawn::CalculateCandidateFaces(int32 SelectedIndex, const TArray<int32>& CubeDims)
-{
-	TArray<ECubeFace> CandidateFaces;
-
-    if (CubeDims.Num() < 3) return CandidateFaces; // 防护：魔方维度不足三维
-
-    int32 DimX = CubeDims[0];
-    int32 DimY = CubeDims[1];
-    int32 DimZ = CubeDims[2];
-
-    // 根据选中块的索引计算三维坐标
-    int32 X = SelectedIndex % DimX;
-    int32 Y = (SelectedIndex / DimX) % DimY;
-    int32 Z = SelectedIndex / (DimX * DimY);
-
-    // 添加候选面
-    if (X == 0) CandidateFaces.Add(ECubeFace::Front);
-    if (X == DimX - 1) CandidateFaces.Add(ECubeFace::Back);
-    if (Y == 0) CandidateFaces.Add(ECubeFace::Left);
-    if (Y == DimY - 1) CandidateFaces.Add(ECubeFace::Right);
-    if (Z == 0) CandidateFaces.Add(ECubeFace::Bottom);
-    if (Z == DimZ - 1) CandidateFaces.Add(ECubeFace::Top);
-
-    // 添加中间层的候选面
-    if (X > 0 && X < DimX - 1) CandidateFaces.Add(ECubeFace::NonFrontNonBack);
-    if (Y > 0 && Y < DimY - 1) CandidateFaces.Add(ECubeFace::NonLeftNonRight);
-    if (Z > 0 && Z < DimZ - 1) CandidateFaces.Add(ECubeFace::NonTopNonBottom);
-
-    return CandidateFaces;
-}
-
-FString ACustomPawn::CubeFaceToString(ECubeFace Face)
-{
-    switch (Face)
-    {
-    case ECubeFace::Front: return TEXT("前面");
-    case ECubeFace::Back: return TEXT("后面");
-    case ECubeFace::Left: return TEXT("左面");
-    case ECubeFace::Right: return TEXT("右面");
-    case ECubeFace::Top: return TEXT("上面");
-    case ECubeFace::Bottom: return TEXT("下面");
-	case ECubeFace::NonLeftNonRight: return TEXT("非左非右面");
-    case ECubeFace::NonTopNonBottom: return TEXT("非上非下面");
-    case ECubeFace::NonFrontNonBack: return TEXT("非前非后面");
-    default: return TEXT("未知");
-    }
-}
-
-void ACustomPawn::ShowDebugInfo(FVector2D DragDelta, ECubeFace TargetFace, float FinalAngle)
-{
-    if (GEngine)
-    {
-        FString DebugMsg = FString::Printf(TEXT("拖拽位移: (%.1f, %.1f)\n目标面: %s\n最终角度: %.1f"),
-                                           DragDelta.X, DragDelta.Y, *CubeFaceToString(TargetFace), FinalAngle);
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, DebugMsg);
-    }
 }
 
 //
@@ -360,13 +228,6 @@ void ACustomPawn::ShowDebugInfo(FVector2D DragDelta, ECubeFace TargetFace, float
 void ACustomPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
-    // 更新候选面的理想方向（仅在镜头发生变化时）
-    if (bCameraMoved)
-    {
-        UpdateCandidateIdealDirections();
-        bCameraMoved = false;
-    }
 
 	if (bIsCubeDrag)
 	{
@@ -621,6 +482,7 @@ void ACustomPawn::OnLeftMouseReleasedCube()
 	// 最终吸附：若当前拖拽角度绝对值大于45，则吸附至 ±90°，否则归零
 	float FinalAngle = (FMath::Abs(CurrentDragAngle) > 45.f) ? ((CurrentDragAngle > 0) ? 90.f : -90.f) : 0.f;
 
+	// 执行旋转
 	float AngleDelta = FinalAngle - CurrentDragAngle;
 	if (FMath::Abs(AngleDelta) > KINDA_SMALL_NUMBER)
 	{
