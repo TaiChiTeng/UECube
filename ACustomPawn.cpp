@@ -147,23 +147,53 @@ void ACustomPawn::OnLeftMousePressedCube()
 				ISMC->GetInstanceTransform(SelectedCubeInstanceIndex, InstTrans, true);
 				SelectedBlockLocalPos = InstTrans.GetLocation();
 				
-				// 根据局部坐标判断候选面：以各轴分量绝对值与阈值判断
-				SelectedCandidateFaces.Empty();
-				const float Thresh = 40.f;
-				if (FMath::Abs(SelectedBlockLocalPos.X) > Thresh)
-					SelectedCandidateFaces.Add((SelectedBlockLocalPos.X < 0) ? TEXT("前面") : TEXT("后面"));
-				if (FMath::Abs(SelectedBlockLocalPos.Y) > Thresh)
-					SelectedCandidateFaces.Add((SelectedBlockLocalPos.Y < 0) ? TEXT("左面") : TEXT("右面"));
-				if (FMath::Abs(SelectedBlockLocalPos.Z) > Thresh)
-					SelectedCandidateFaces.Add((SelectedBlockLocalPos.Z > 0) ? TEXT("上面") : TEXT("下面"));
-				
-				// 扩展候选面：当局部坐标幅度较小，则归为“非…”类别
-				if (FMath::Abs(SelectedBlockLocalPos.Z) < 20.f)
-					SelectedCandidateFaces.Add(TEXT("非上非下面"));
-				if (FMath::Abs(SelectedBlockLocalPos.Y) < 20.f)
-					SelectedCandidateFaces.Add(TEXT("非左非右面"));
-				if (FMath::Abs(SelectedBlockLocalPos.X) < 20.f)
-					SelectedCandidateFaces.Add(TEXT("非前非后面"));
+				// 这里不再依赖块位置的绝对值，而是依据选中块的 index 生成候选面
+				AMagicCubeActor* CubeActor = nullptr;
+				for (TActorIterator<AMagicCubeActor> It(GetWorld()); It; ++It)
+				{
+					CubeActor = *It;
+					break;
+				}
+				if (CubeActor)
+				{
+					const TArray<int32>& CubeDims = CubeActor->Dimensions;
+					if (CubeDims.Num() >= 3)
+					{
+						int32 dimX = CubeDims[0];
+						int32 dimY = CubeDims[1];
+						int32 dimZ = CubeDims[2];
+						int32 index = SelectedCubeInstanceIndex;
+						// 计算三维坐标
+						int32 x = index % dimX;
+						int32 y = (index / dimX) % dimY;
+						int32 z = index / (dimX * dimY);
+						
+						SelectedCandidateFaces.Empty();
+						// X 轴
+						if (x == 0)
+							SelectedCandidateFaces.Add(TEXT("前面"));
+						else if (x == dimX - 1)
+							SelectedCandidateFaces.Add(TEXT("后面"));
+						else
+							SelectedCandidateFaces.Add(TEXT("非前非后面"));
+						
+						// Y 轴
+						if (y == 0)
+							SelectedCandidateFaces.Add(TEXT("左面"));
+						else if (y == dimY - 1)
+							SelectedCandidateFaces.Add(TEXT("右面"));
+						else
+							SelectedCandidateFaces.Add(TEXT("非左非右面"));
+						
+						// Z 轴
+						if (z == 0)
+							SelectedCandidateFaces.Add(TEXT("下面"));
+						else if (z == dimZ - 1)
+							SelectedCandidateFaces.Add(TEXT("上面"));
+						else
+							SelectedCandidateFaces.Add(TEXT("非上非下面"));
+					}
+				}
 				
 				// 利用 HitNormal 和魔方六个标准面法向量计算射线碰撞平面
 				struct FFaceInfo { FString Label; FVector Normal; };
