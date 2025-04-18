@@ -5,8 +5,9 @@
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 
-// 前向声明枚举类，避免直接包含 MagicCubeActor.h 带来的耦合
+// 前向声明枚举类和魔方Actor类，避免直接包含 MagicCubeActor.h 带来的耦合
 enum class ECubeAxis : uint8;
+class AMagicCubeActor;
 
 #include "ACustomPawn.generated.h"
 
@@ -44,10 +45,10 @@ protected:
 	float MaxPitch;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
-	class USpringArmComponent* SpringArm;
+	USpringArmComponent* SpringArm;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
-	class UCameraComponent* Camera;
+	UCameraComponent* Camera;
 
 	//////////////////////////////////////////////////////////////////////////
 	// 魔方旋转交互所需变量
@@ -75,7 +76,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MagicCube|Interaction")
 	FString SelectedHitPlane;
 	
-	// 新增：记录射线命中的法向量，用于判断碰撞面
+	// 记录射线命中的法向量，用于判断碰撞面
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MagicCube|Interaction")
 	FVector HitNormal;
 
@@ -84,4 +85,8 @@ protected:
 	ECubeAxis CurrentRotateAxis;        // 当前旋转轴
 	int32 CurrentLayerIndex;            // 当前旋转层索引
 	float CurrentDragAngle;             // 当前拖拽计算出的旋转角度
+
+	// 新增：记录当前被操作的魔方 Actor，支持场景中多个魔方 Actor 正常交互
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MagicCube|Interaction")
+	AMagicCubeActor* SelectedCubeActor;
 };
