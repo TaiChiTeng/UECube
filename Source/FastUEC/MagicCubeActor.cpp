@@ -202,19 +202,32 @@ void AMagicCubeActor::SetLayerRotation(ECubeAxis Axis, int32 Layer, float Angle)
         default: RotationAxis = FVector::ZeroVector; break;
     }
     
-    FQuat RotQuat(RotationAxis, FMath::DegreesToRadians(Angle));
+    FQuat DeltaQuat(RotationAxis, FMath::DegreesToRadians(Angle));
     
-    // 对于拖拽过程中受影响的实例，使用 BeginLayerRotation 中保存的基准变换进行旋转
-    for (int32 i = 0; i < CurrentDragAffectedInstances.Num(); i++)
+    // 2. 遍历受影响实例，累加它们的世界位置计算质心 Pivot
+    FVector Pivot = FVector::ZeroVector;
+    for (int32 Idx : CurrentRotation.AffectedInstances)
     {
-        int32 idx = CurrentDragAffectedInstances[i];
-        if (CurrentDragBaseTransforms.IsValidIndex(i))
-        {
-            FTransform NewTransform = CurrentDragBaseTransforms[i];
-            NewTransform.SetLocation(RotQuat.RotateVector(NewTransform.GetLocation()));
-            NewTransform.SetRotation(RotQuat * NewTransform.GetRotation());
-            InstancedMesh->UpdateInstanceTransform(idx, NewTransform, true);
-        }
+        FTransform Tr;
+        InstancedMesh->GetInstanceTransform(Idx, Tr, /*bWorldSpace=*/true);
+        Pivot += Tr.GetLocation();
+    }
+    Pivot /= CurrentRotation.AffectedInstances.Num();
+
+    // 3. 再次遍历，用质心为中心进行四元数旋转
+    for (int32 Idx : CurrentRotation.AffectedInstances)
+    {
+        FTransform Tr;
+        InstancedMesh->GetInstanceTransform(Idx, Tr, /*bWorldSpace=*/true);
+
+        FVector LocalPos = Tr.GetLocation() - Pivot;
+        FVector NewPos   = DeltaQuat.RotateVector(LocalPos) + Pivot;
+        FQuat   NewRot   = DeltaQuat * Tr.GetRotation();
+
+        FTransform NewTr(NewRot, NewPos, Tr.GetScale3D());
+        InstancedMesh->UpdateInstanceTransform(Idx, NewTr,
+                                               /*bWorldSpace=*/true,
+                                               /*bMarkRenderStateDirty=*/false);
     }
     
     // 同步更新顶面部件：不再仅限于 Z 轴旋转，
@@ -228,8 +241,8 @@ void AMagicCubeActor::SetLayerRotation(ECubeAxis Axis, int32 Layer, float Angle)
             if (CurrentDragAffectedInstances.Contains(BlockIndex))
             {
                 FTransform NewTransform = CurrentDragTopPartBaseTransforms[i];
-                NewTransform.SetLocation(RotQuat.RotateVector(NewTransform.GetLocation()));
-                NewTransform.SetRotation(RotQuat * NewTransform.GetRotation());
+                NewTransform.SetLocation(DeltaQuat.RotateVector(NewTransform.GetLocation()));
+                NewTransform.SetRotation(DeltaQuat * NewTransform.GetRotation());
                 TopPartComponents[i]->SetRelativeTransform(NewTransform);
             }
         }
@@ -263,29 +276,37 @@ void AMagicCubeActor::CollectLayerInstances(ECubeAxis Axis, int32 Layer, TArray<
 
 void AMagicCubeActor::ApplyRotationToInstances(float DeltaDegrees)
 {
-    FVector RotationAxis;
-    switch (CurrentRotation.Axis)
+    // 1. 计算当前轴的旋转四元数
+    FVector RotAxis = (CurrentRotation.Axis == ECubeAxis::X) ? FVector::ForwardVector :
+                      (CurrentRotation.Axis == ECubeAxis::Y) ? FVector::RightVector :
+                                                             FVector::UpVector;
+    FQuat DeltaQuat(RotAxis, FMath::DegreesToRadians(DeltaDegrees));
+
+    // 2. 遍历受影响实例，累加它们的世界位置计算质心 Pivot
+    FVector Pivot = FVector::ZeroVector;
+    for (int32 Idx : CurrentRotation.AffectedInstances)
     {
-        case ECubeAxis::X: RotationAxis = FVector::ForwardVector; break;
-        case ECubeAxis::Y: RotationAxis = FVector::RightVector; break;
-        case ECubeAxis::Z: RotationAxis = FVector::UpVector; break;
-        default: RotationAxis = FVector::ZeroVector; break;
+        FTransform Tr;
+        InstancedMesh->GetInstanceTransform(Idx, Tr, /*bWorldSpace=*/true);
+        Pivot += Tr.GetLocation();
     }
-    
-    UE_LOG(LogTemp, Warning, TEXT("Applying rotation: DeltaDegrees=%f on Axis=%s"), DeltaDegrees, *RotationAxis.ToString());
-    
-    FQuat DeltaQuat(RotationAxis, FMath::DegreesToRadians(DeltaDegrees));
-    
-    for (int32 Index : CurrentRotation.AffectedInstances)
+    Pivot /= CurrentRotation.AffectedInstances.Num();
+
+    // 3. 再次遍历，用质心为中心进行四元数旋转
+    for (int32 Idx : CurrentRotation.AffectedInstances)
     {
-        FTransform Transform;
-        InstancedMesh->GetInstanceTransform(Index, Transform, true);
-        FVector RotatedPos = DeltaQuat.RotateVector(Transform.GetLocation());
-        Transform.SetLocation(RotatedPos);
-        Transform.SetRotation(DeltaQuat * Transform.GetRotation());
-        InstancedMesh->UpdateInstanceTransform(Index, Transform, true);
+        FTransform Tr;
+        InstancedMesh->GetInstanceTransform(Idx, Tr, /*bWorldSpace=*/true);
+
+        FVector LocalPos = Tr.GetLocation() - Pivot;
+        FVector NewPos   = DeltaQuat.RotateVector(LocalPos) + Pivot;
+        FQuat   NewRot   = DeltaQuat * Tr.GetRotation();
+
+        FTransform NewTr(NewRot, NewPos, Tr.GetScale3D());
+        InstancedMesh->UpdateInstanceTransform(Idx, NewTr,
+                                               /*bWorldSpace=*/true,
+                                               /*bMarkRenderStateDirty=*/false);
     }
-    
     // 同步更新顶面部件：与 RotateLayer 中的处理相似
     int32 TopLayerStartIndex = Dimensions[0] * Dimensions[1] * (Dimensions[2]-1);
     for (int32 i = 0; i < TopPartComponents.Num(); i++)
@@ -308,8 +329,10 @@ void AMagicCubeActor::ApplyRotationToInstances(float DeltaDegrees)
             }
         }
     }
+    // 4. 一次性刷新渲染
     InstancedMesh->MarkRenderStateDirty();
 }
+
 
 int32 AMagicCubeActor::GetDimensionIndex(ECubeAxis Axis) const
 {
