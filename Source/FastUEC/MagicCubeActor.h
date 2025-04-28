@@ -22,8 +22,7 @@ class FASTUEC_API AMagicCubeActor : public AActor
 
 public:
     AMagicCubeActor();
-
-    // **** 将连续拖拽接口设为 public ****
+    
     void BeginLayerRotation(ECubeAxis Axis, int32 Layer);
     void EndLayerRotationDrag();
 
@@ -132,4 +131,5 @@ private:
     void ApplyRotationToInstances(float DeltaDegrees);
     int32 GetDimensionIndex(ECubeAxis Axis) const;
     int32 GetLinearIndex(int32 x, int32 y, int32 z) const;
+
 };

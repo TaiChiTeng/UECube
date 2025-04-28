@@ -11,10 +11,10 @@ AMagicCubeActor::AMagicCubeActor()
     InstancedMesh->SetupAttachment(RootComponent);
     InstancedMesh->SetCollisionProfileName(TEXT("BlockAll"));
     
-    // 如果 Dimensions 未设置，则默认使用 2x2x2 魔方
+    // 如果 Dimensions 未设置，则默认使用 1x1x1 魔方
     if (Dimensions.Num() != 3)
     {
-        Dimensions = { 2, 2, 2 };
+        Dimensions = { 1, 1, 1 };
     }
 }
 
@@ -265,59 +265,6 @@ void AMagicCubeActor::CollectLayerInstances(ECubeAxis Axis, int32 Layer, TArray<
         }
     }
 }
-
-
-// void AMagicCubeActor::ApplyRotationToInstances(float DeltaDegrees)
-// {
-//     FVector RotationAxis;
-//     switch (CurrentRotation.Axis)
-//     {
-//         case ECubeAxis::X: RotationAxis = FVector::ForwardVector; break;
-//         case ECubeAxis::Y: RotationAxis = FVector::RightVector; break;
-//         case ECubeAxis::Z: RotationAxis = FVector::UpVector; break;
-//         default: RotationAxis = FVector::ZeroVector; break;
-//     }
-    
-//     UE_LOG(LogTemp, Warning, TEXT("Applying rotation: DeltaDegrees=%f on Axis=%s"), DeltaDegrees, *RotationAxis.ToString());
-    
-//     FQuat DeltaQuat(RotationAxis, FMath::DegreesToRadians(DeltaDegrees));
-    
-//     for (int32 Index : CurrentRotation.AffectedInstances)
-//     {
-//         FTransform Transform;
-//         InstancedMesh->GetInstanceTransform(Index, Transform, true);
-//         FVector RotatedPos = DeltaQuat.RotateVector(Transform.GetLocation());
-//         Transform.SetLocation(RotatedPos);
-//         Transform.SetRotation(DeltaQuat * Transform.GetRotation());
-//         InstancedMesh->UpdateInstanceTransform(Index, Transform, true);
-//     }
-    
-//     // 同步更新顶面部件：与 RotateLayer 中的处理相似
-//     int32 TopLayerStartIndex = Dimensions[0] * Dimensions[1] * (Dimensions[2]-1);
-//     for (int32 i = 0; i < TopPartComponents.Num(); i++)
-//     {
-//         int32 BlockIndex = TopLayerStartIndex + i;
-//         if (CurrentRotation.AffectedInstances.Contains(BlockIndex))
-//         {
-//             UStaticMeshComponent* TopPartComp = TopPartComponents[i];
-//             if (TopPartComp)
-//             {
-//                 FVector CurrPos = TopPartComp->GetRelativeLocation();
-//                 FVector NewPos = DeltaQuat.RotateVector(CurrPos);
-//                 TopPartComp->SetRelativeLocation(NewPos);
-                
-//                 FQuat CurrRot = TopPartComp->GetRelativeRotation().Quaternion();
-//                 FQuat NewRot = DeltaQuat * CurrRot;
-//                 TopPartComp->SetRelativeRotation(NewRot);
-                
-//                 UE_LOG(LogTemp, Warning, TEXT("同步旋转顶面部件 %d，对应 BlockIndex=%d"), i, BlockIndex);
-//             }
-//         }
-//     }
-//     InstancedMesh->MarkRenderStateDirty();
-// }
-
-// MagicCubeActor.cpp
 
 void AMagicCubeActor::ApplyRotationToInstances(float DeltaDegrees)
 {
