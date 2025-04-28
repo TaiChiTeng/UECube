@@ -241,75 +241,156 @@ void AMagicCubeActor::SetLayerRotation(ECubeAxis Axis, int32 Layer, float Angle)
 void AMagicCubeActor::CollectLayerInstances(ECubeAxis Axis, int32 Layer, TArray<int32>& OutInstances)
 {
     OutInstances.Empty();
-    int32 TotalInstances = InstancedMesh->GetInstanceCount();
-    int32 DimIndex = GetDimensionIndex(Axis);
-    
-    for (int32 i = 0; i < TotalInstances; i++)
+    int32 Total = InstancedMesh->GetInstanceCount();
+    int32 DimIdx = GetDimensionIndex(Axis);
+
+    // 在组件自身空间里，这一层对应的理想坐标
+    float CenterOffset = (Dimensions[DimIdx] - 1) * 0.5f;
+    float TargetLocal = (Layer - CenterOffset) * BlockSize;
+    const float Tol = 0.01f;
+
+    for (int32 i = 0; i < Total; ++i)
     {
-        FTransform Transform;
-        InstancedMesh->GetInstanceTransform(i, Transform, true);
-        FVector LocalPos = Transform.GetLocation();
-        int32 Coord[3];
-        Coord[0] = FMath::RoundToInt(LocalPos.X / BlockSize + (Dimensions[0] - 1) / 2.0f);
-        Coord[1] = FMath::RoundToInt(LocalPos.Y / BlockSize + (Dimensions[1] - 1) / 2.0f);
-        Coord[2] = FMath::RoundToInt(LocalPos.Z / BlockSize + (Dimensions[2] - 1) / 2.0f);
-        
-        if (Coord[DimIndex] == Layer)
+        // 直接拿「组件局部」Transform
+        FTransform LocalTr;
+        InstancedMesh->GetInstanceTransform(i, LocalTr, /*bWorldSpace=*/false);
+
+        float V = (Axis == ECubeAxis::X ? LocalTr.GetLocation().X :
+                   Axis == ECubeAxis::Y ? LocalTr.GetLocation().Y :
+                                          LocalTr.GetLocation().Z);
+
+        if (FMath::Abs(V - TargetLocal) <= Tol)
         {
             OutInstances.Add(i);
         }
     }
 }
 
+
+// void AMagicCubeActor::ApplyRotationToInstances(float DeltaDegrees)
+// {
+//     FVector RotationAxis;
+//     switch (CurrentRotation.Axis)
+//     {
+//         case ECubeAxis::X: RotationAxis = FVector::ForwardVector; break;
+//         case ECubeAxis::Y: RotationAxis = FVector::RightVector; break;
+//         case ECubeAxis::Z: RotationAxis = FVector::UpVector; break;
+//         default: RotationAxis = FVector::ZeroVector; break;
+//     }
+    
+//     UE_LOG(LogTemp, Warning, TEXT("Applying rotation: DeltaDegrees=%f on Axis=%s"), DeltaDegrees, *RotationAxis.ToString());
+    
+//     FQuat DeltaQuat(RotationAxis, FMath::DegreesToRadians(DeltaDegrees));
+    
+//     for (int32 Index : CurrentRotation.AffectedInstances)
+//     {
+//         FTransform Transform;
+//         InstancedMesh->GetInstanceTransform(Index, Transform, true);
+//         FVector RotatedPos = DeltaQuat.RotateVector(Transform.GetLocation());
+//         Transform.SetLocation(RotatedPos);
+//         Transform.SetRotation(DeltaQuat * Transform.GetRotation());
+//         InstancedMesh->UpdateInstanceTransform(Index, Transform, true);
+//     }
+    
+//     // 同步更新顶面部件：与 RotateLayer 中的处理相似
+//     int32 TopLayerStartIndex = Dimensions[0] * Dimensions[1] * (Dimensions[2]-1);
+//     for (int32 i = 0; i < TopPartComponents.Num(); i++)
+//     {
+//         int32 BlockIndex = TopLayerStartIndex + i;
+//         if (CurrentRotation.AffectedInstances.Contains(BlockIndex))
+//         {
+//             UStaticMeshComponent* TopPartComp = TopPartComponents[i];
+//             if (TopPartComp)
+//             {
+//                 FVector CurrPos = TopPartComp->GetRelativeLocation();
+//                 FVector NewPos = DeltaQuat.RotateVector(CurrPos);
+//                 TopPartComp->SetRelativeLocation(NewPos);
+                
+//                 FQuat CurrRot = TopPartComp->GetRelativeRotation().Quaternion();
+//                 FQuat NewRot = DeltaQuat * CurrRot;
+//                 TopPartComp->SetRelativeRotation(NewRot);
+                
+//                 UE_LOG(LogTemp, Warning, TEXT("同步旋转顶面部件 %d，对应 BlockIndex=%d"), i, BlockIndex);
+//             }
+//         }
+//     }
+//     InstancedMesh->MarkRenderStateDirty();
+// }
+
+// MagicCubeActor.cpp
+
 void AMagicCubeActor::ApplyRotationToInstances(float DeltaDegrees)
 {
+    // 1. 计算旋转轴
     FVector RotationAxis;
     switch (CurrentRotation.Axis)
     {
         case ECubeAxis::X: RotationAxis = FVector::ForwardVector; break;
-        case ECubeAxis::Y: RotationAxis = FVector::RightVector; break;
-        case ECubeAxis::Z: RotationAxis = FVector::UpVector; break;
-        default: RotationAxis = FVector::ZeroVector; break;
+        case ECubeAxis::Y: RotationAxis = FVector::RightVector;   break;
+        case ECubeAxis::Z: RotationAxis = FVector::UpVector;      break;
+        default:           RotationAxis = FVector::ZeroVector;    break;
     }
-    
-    UE_LOG(LogTemp, Warning, TEXT("Applying rotation: DeltaDegrees=%f on Axis=%s"), DeltaDegrees, *RotationAxis.ToString());
-    
     FQuat DeltaQuat(RotationAxis, FMath::DegreesToRadians(DeltaDegrees));
-    
+
+    // 2. 先算出这一轮所有实例的世界质心（Pivot）
+    FVector Pivot = FVector::ZeroVector;
     for (int32 Index : CurrentRotation.AffectedInstances)
     {
-        FTransform Transform;
-        InstancedMesh->GetInstanceTransform(Index, Transform, true);
-        FVector RotatedPos = DeltaQuat.RotateVector(Transform.GetLocation());
-        Transform.SetLocation(RotatedPos);
-        Transform.SetRotation(DeltaQuat * Transform.GetRotation());
-        InstancedMesh->UpdateInstanceTransform(Index, Transform, true);
+        FTransform Tr;
+        InstancedMesh->GetInstanceTransform(Index, Tr, /*bWorldSpace=*/ true);
+        Pivot += Tr.GetLocation();
     }
-    
-    // 同步更新顶面部件：与 RotateLayer 中的处理相似
-    int32 TopLayerStartIndex = Dimensions[0] * Dimensions[1] * (Dimensions[2]-1);
+    Pivot /= CurrentRotation.AffectedInstances.Num();
+
+    // 3. 围绕 Pivot 做旋转
+    for (int32 Index : CurrentRotation.AffectedInstances)
+    {
+        // 拿到当前 world-space Transform
+        FTransform Tr;
+        InstancedMesh->GetInstanceTransform(Index, Tr, /*bWorldSpace=*/ true);
+
+        // 移到枢轴原点、旋转、再移回
+        FVector LocalOffset = Tr.GetLocation() - Pivot;
+        FVector NewWorldPos = Pivot + DeltaQuat.RotateVector(LocalOffset);
+        FQuat   NewWorldRot = DeltaQuat * Tr.GetRotation();
+
+        FTransform NewTr;
+        NewTr.SetLocation(NewWorldPos);
+        NewTr.SetRotation(NewWorldRot);
+        NewTr.SetScale3D(Tr.GetScale3D());
+
+        InstancedMesh->UpdateInstanceTransform(Index, NewTr, /*bWorldSpace=*/ true, /*bMarkRenderStateDirty=*/ false);
+    }
+
+    // 4. 同步顶面部件（若有），同样围绕相同的 Pivot 做旋转
+    int32 TopLayerStartIndex = Dimensions[0] * Dimensions[1] * (Dimensions[2] - 1);
     for (int32 i = 0; i < TopPartComponents.Num(); i++)
     {
         int32 BlockIndex = TopLayerStartIndex + i;
         if (CurrentRotation.AffectedInstances.Contains(BlockIndex))
         {
-            UStaticMeshComponent* TopPartComp = TopPartComponents[i];
-            if (TopPartComp)
+            UStaticMeshComponent* Comp = TopPartComponents[i];
+            if (Comp)
             {
-                FVector CurrPos = TopPartComp->GetRelativeLocation();
-                FVector NewPos = DeltaQuat.RotateVector(CurrPos);
-                TopPartComp->SetRelativeLocation(NewPos);
-                
-                FQuat CurrRot = TopPartComp->GetRelativeRotation().Quaternion();
-                FQuat NewRot = DeltaQuat * CurrRot;
-                TopPartComp->SetRelativeRotation(NewRot);
-                
-                UE_LOG(LogTemp, Warning, TEXT("同步旋转顶面部件 %d，对应 BlockIndex=%d"), i, BlockIndex);
+                // 取相对 Root 的世界 Transform
+                FTransform CompWorldTr = Comp->GetComponentTransform();
+                FVector LocalOffset = CompWorldTr.GetLocation() - Pivot;
+                FVector NewWorldPos = Pivot + DeltaQuat.RotateVector(LocalOffset);
+                FQuat   NewWorldRot = DeltaQuat * CompWorldTr.GetRotation();
+
+                // 转回相对 Root 的相对变换
+                FTransform NewRel = CompWorldTr;
+                NewRel.SetLocation(NewWorldPos);
+                NewRel.SetRotation(NewWorldRot);
+                Comp->SetWorldTransform(NewRel);
             }
         }
     }
+
+    // 5. 最后一次性刷新渲染
     InstancedMesh->MarkRenderStateDirty();
 }
+
 
 int32 AMagicCubeActor::GetDimensionIndex(ECubeAxis Axis) const
 {
