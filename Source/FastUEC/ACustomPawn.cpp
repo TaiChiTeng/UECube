@@ -238,13 +238,23 @@ void ACustomPawn::Tick(float DeltaTime)
         if (DragDelta.Size() < DragThresh)
             return;
         
-        // 拖拽初期确定目标面：剔除与 SelectedHitPlane 相同的候选
+        // 创建面与相反面的映射
+        static TMap<FString, FString> OppositeFaces = {
+            {TEXT("前面"), TEXT("后面")}, {TEXT("后面"), TEXT("前面")},
+            {TEXT("左面"), TEXT("右面")}, {TEXT("右面"), TEXT("左面")},
+            {TEXT("上面"), TEXT("下面")}, {TEXT("下面"), TEXT("上面")}
+        };
+        
+        // 拖拽初期确定目标面：剔除与 SelectedHitPlane 相同及相反的候选
         if (CurrentTargetFace.IsEmpty())
         {
             TArray<FString> FilteredCandidates;
+            const FString OppositeFace = OppositeFaces.FindRef(SelectedHitPlane);
+            
             for (const FString& Lab : SelectedCandidateFaces)
             {
-                if (Lab != SelectedHitPlane)
+                // 排除当前碰撞面及其相反面
+                if (Lab != SelectedHitPlane && Lab != OppositeFace)
                     FilteredCandidates.Add(Lab);
             }
             const TArray<FString>& UseCandidates = (FilteredCandidates.Num() > 0 ? FilteredCandidates : SelectedCandidateFaces);
