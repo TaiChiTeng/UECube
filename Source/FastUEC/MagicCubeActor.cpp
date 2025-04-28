@@ -486,3 +486,18 @@ void AMagicCubeActor::EndLayerRotationDrag()
     CurrentDragBaseTransforms.Empty();
     CurrentDragTopPartBaseTransforms.Empty();
 }
+
+// 根据魔方块坐标计算归属面集合
+TArray<EMagicCubeFace> AMagicCubeActor::GetCubeFacesForBlock(int32 x, int32 y, int32 z) const
+{
+    TArray<EMagicCubeFace> Faces;
+
+    if (x == 0) Faces.Add(EMagicCubeFace::Left); // 左面
+    if (x == Dimensions[0] - 1) Faces.Add(EMagicCubeFace::Right); // 右面
+    if (y == 0) Faces.Add(EMagicCubeFace::Back); // 后面
+    if (y == Dimensions[1] - 1) Faces.Add(EMagicCubeFace::Front); // 前面
+    if (z == 0) Faces.Add(EMagicCubeFace::Bottom); // 底部
+    if (z == Dimensions[2] - 1) Faces.Add(EMagicCubeFace::Top); // 顶部
+
+    return Faces;
+}

@@ -93,7 +93,6 @@ void ACustomPawn::LookUp(float AxisValue)
 
 
 // 当鼠标左键按下时：记录屏幕坐标、射线检测选中魔方块，构造候选面集合，并利用 HitNormal 计算射线碰撞平面
-// ... existing code ...
 void ACustomPawn::OnLeftMousePressedCube()
 {
     if (APlayerController* PC = Cast<APlayerController>(GetController()))
@@ -111,9 +110,27 @@ void ACustomPawn::OnLeftMousePressedCube()
             // 尝试获取魔方Actor
             if (AMagicCubeActor* MagicCube = Cast<AMagicCubeActor>(HitResult.GetActor()))
             {
-                // 打印魔方Actor信息
-                FString Message = FString::Printf(TEXT("点击到魔方块，所属魔方Actor: %s"), 
-                    *MagicCube->GetName());
+                // 计算点击到的块索引
+                const FVector LocalPosition = MagicCube->GetActorTransform().InverseTransformPosition(HitResult.ImpactPoint);
+                const int32 x = FMath::RoundToInt((LocalPosition.X + (MagicCube->Dimensions[0] - 1) * 0.5f * MagicCube->BlockSize) / MagicCube->BlockSize);
+                const int32 y = FMath::RoundToInt((LocalPosition.Y + (MagicCube->Dimensions[1] - 1) * 0.5f * MagicCube->BlockSize) / MagicCube->BlockSize);
+                const int32 z = FMath::RoundToInt((LocalPosition.Z + (MagicCube->Dimensions[2] - 1) * 0.5f * MagicCube->BlockSize) / MagicCube->BlockSize);
+
+                const int32 BlockIndex = MagicCube->GetLinearIndex(x, y, z);
+
+                // 获取归属面集合
+                TArray<EMagicCubeFace> Faces = MagicCube->GetCubeFacesForBlock(x, y, z);
+
+                // 构造归属面集合字符串
+                FString FaceNames;
+                for (EMagicCubeFace Face : Faces)
+                {
+                    FaceNames += StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(Face)) + TEXT(" ");
+                }
+
+                // 打印信息
+                FString Message = FString::Printf(TEXT("点击到魔方块，所属魔方Actor: %s，块索引: %d，归属面集合: %s"),
+                    *MagicCube->GetName(), BlockIndex, *FaceNames);
                 GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, Message);
                 UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
             }
