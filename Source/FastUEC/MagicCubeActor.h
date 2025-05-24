@@ -5,7 +5,7 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "MagicCubeActor.generated.h" // 确保正确保留
 
-// 定义魔方的面类型，ECubeFace会编译失败，可能UE已经用了
+// Teng：定义魔方的面类型，ECubeFace会编译失败，可能UE已经用了
 UENUM(BlueprintType)
 enum class EMagicCubeFace : uint8
 {
