@@ -501,3 +501,37 @@ TArray<EMagicCubeFace> AMagicCubeActor::GetCubeFacesForBlock(int32 x, int32 y, i
 
     return Faces;
 }
+
+// 获取面的法向量
+FVector AMagicCubeActor::GetFaceNormal(EMagicCubeFace Face) const
+{
+    // 调用示例：
+    // 获取顶面的法向量
+    // FVector TopNormal = GetFaceNormal(EMagicCubeFace::Top);
+    // UE_LOG(LogTemp, Warning, TEXT("Top Face Normal: %s"), *TopNormal.ToString());
+    // // 获取左面的法向量
+    // FVector LeftNormal = GetFaceNormal(EMagicCubeFace::Left);
+    // UE_LOG(LogTemp, Warning, TEXT("Left Face Normal: %s"), *LeftNormal.ToString());
+
+    // 定义面与法向量的映射
+    // Teng：这里AI容易错，UE是左手坐标系，X是食指红色（对准屏幕），Y是中指绿色（对准屏幕右方），Z是大拇指蓝色（对准屏幕上方）
+    TMap<EMagicCubeFace, FVector> FaceNormals = {
+        {EMagicCubeFace::Top, FVector(0, 0, 1)},
+        {EMagicCubeFace::Bottom, FVector(0, 0, -1)},
+        {EMagicCubeFace::Front, FVector(-1, 0, 0)},
+        {EMagicCubeFace::Back, FVector(1, 0, 0)},
+        {EMagicCubeFace::Left, FVector(0, -1, 0)},
+        {EMagicCubeFace::Right, FVector(0, 1, 0)},
+    };
+
+    // 查找对应面的法向量，如果找不到则返回零向量
+    if (FaceNormals.Contains(Face))
+    {
+        return FaceNormals[Face];
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("No normal defined for face %d"), static_cast<int32>(Face));
+        return FVector::ZeroVector; // 返回零向量表示错误
+    }
+}

@@ -99,7 +99,6 @@ void ACustomPawn::LookUp(float AxisValue)
     }
 }
 
-
 // 当鼠标左键按下时：记录屏幕坐标、射线检测选中魔方块，构造候选面集合，并利用 HitNormal 计算射线碰撞平面
 void ACustomPawn::OnLeftMousePressedCube()
 {
@@ -142,38 +141,29 @@ void ACustomPawn::OnLeftMousePressedCube()
                 // 获取归属面集合
                 TArray<EMagicCubeFace> Faces = MagicCube->GetCubeFacesForBlock(x, y, z);
 
-                // 定义面与法向量的映射
-                // Teng：这里AI容易错，UE是左手坐标系，X是食指红色（对准屏幕），Y是中指绿色（对准屏幕右方），Z是大拇指蓝色（对准屏幕上方）
-                TMap<EMagicCubeFace, FVector> FaceNormals = {
-                    {EMagicCubeFace::Top, FVector(0, 0, 1)},
-                    {EMagicCubeFace::Bottom, FVector(0, 0, -1)},
-                    {EMagicCubeFace::Front, FVector(-1, 0, 0)},
-                    {EMagicCubeFace::Back, FVector(1, 0, 0)},
-                    {EMagicCubeFace::Left, FVector(0, -1, 0)},
-                    {EMagicCubeFace::Right, FVector(0, 1, 0)},
-                };
-
                 // 找到射线击中面
                 EMagicCubeFace HitFace = EMagicCubeFace::Top; // 默认值
                 float MaxDot = -1.0f;
-                for (const auto& Pair : FaceNormals)
+                for (EMagicCubeFace Face : Faces) // 遍历归属面集合
                 {
-                    float DotProduct = FVector::DotProduct(Pair.Value, HitResult.ImpactNormal);
+                    FVector FaceNormal = MagicCube->GetFaceNormal(Face);
+                    float DotProduct = FVector::DotProduct(FaceNormal, HitResult.ImpactNormal);
                     if (DotProduct > MaxDot)
                     {
                         MaxDot = DotProduct;
-                        HitFace = Pair.Key;
+                        HitFace = Face;
                     }
                 }
 
                 // 找到射线击中面的反面
                 EMagicCubeFace OppositeFace = EMagicCubeFace::Bottom; // 默认值
-                for (const auto& Pair : FaceNormals)
+                for (EMagicCubeFace Face : Faces) // 遍历归属面集合
                 {
-                    float DotProduct = FVector::DotProduct(Pair.Value, -HitResult.ImpactNormal);
+                    FVector FaceNormal = MagicCube->GetFaceNormal(Face);
+                    float DotProduct = FVector::DotProduct(FaceNormal, -HitResult.ImpactNormal);
                     if (FMath::IsNearlyEqual(DotProduct, 1.0f)) // 完全相反
                     {
-                        OppositeFace = Pair.Key;
+                        OppositeFace = Face;
                         break;
                     }
                 }

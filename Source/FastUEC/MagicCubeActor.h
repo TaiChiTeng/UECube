@@ -36,9 +36,17 @@ public:
     AMagicCubeActor();
 
     // 根据魔方块坐标计算归属面集合
+    UFUNCTION(BlueprintPure, Category = "MagicCube") // 标记为纯函数，可以在蓝图中安全使用
     TArray<EMagicCubeFace> GetCubeFacesForBlock(int32 x, int32 y, int32 z) const;
 
+    // 获取面的法向量
+    UFUNCTION(BlueprintPure, Category = "MagicCube")
+    FVector GetFaceNormal(EMagicCubeFace Face) const; // 声明为const，表明不修改对象状态
+
+    UFUNCTION(BlueprintCallable, Category = "MagicCube")
     void BeginLayerRotation(ECubeAxis Axis, int32 Layer);
+
+    UFUNCTION(BlueprintCallable, Category = "MagicCube")
     void EndLayerRotationDrag();
 
 protected:
