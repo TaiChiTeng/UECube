@@ -186,7 +186,7 @@ void ACustomPawn::OnLeftMousePressedCube()
                     *StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(OppositeFace)),
                     *TargetFaceNames);
                 GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, Message);
-                UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
+                UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);                
             }
         }
     }
@@ -233,12 +233,23 @@ void ACustomPawn::Tick(float DeltaTime)
                 // 在达到阈值时，遍历目标面集合，找出目标面集合里边，面的法向量 和 鼠标位移 最接近平行的法向量，打印出这个面，我们把它称作“旋转面”。
                 if (CachedMagicCube && Camera)
                 {
-                    // 获取鼠标位移向量
-                    FVector2D MouseMovementVector = TotalMouseMovement.GetSafeNormal(); // 使用GetSafeNormal进行标准化
+                    // 获取鼠标位移向量并标准化
+                    FVector2D MouseMovementVector = TotalMouseMovement.GetSafeNormal();
 
                     // 初始化最大点积绝对值和对应的面
                     float MaxDotProductAbs = 0.0f;
                     EMagicCubeFace RotationFace = EMagicCubeFace::Top; // 默认值
+
+                    // 获取魔方中心的世界坐标
+                    FVector MagicCubeCenter = CachedMagicCube->GetActorLocation();
+
+                    // 将魔方中心的世界坐标转换为屏幕坐标
+                    FVector2D MagicCubeCenterScreenSpace;
+                    if (!UGameplayStatics::ProjectWorldToScreen(PC, MagicCubeCenter, MagicCubeCenterScreenSpace, false))
+                    {
+                        UE_LOG(LogTemp, Warning, TEXT("魔方中心世界坐标到屏幕坐标转换失败！"));
+                        return;
+                    }
 
                     // 遍历目标面集合，计算鼠标位移和各目标面元素的点积
                     for (EMagicCubeFace Face : CachedTargetFaces)
@@ -247,15 +258,15 @@ void ACustomPawn::Tick(float DeltaTime)
                         FVector FaceRotateDirection = CachedMagicCube->GetFaceRotateDirection(Face);
                         FaceRotateDirection.Normalize(); // 标准化旋转方向
 
-                        // 将旋转方向转换为屏幕空间向量（这里需要根据您的摄像机设置进行调整）
-                        // 使用 UGameplayStatics::ProjectWorldToScreen 进行坐标转换
-                        FVector2D ScreenSpaceRotateDirection;
+                        // 将旋转方向转换为世界坐标系中的一个点
+                        FVector RotateDirectionWorldSpace = MagicCubeCenter + FaceRotateDirection * 100.0f; // 乘以一个系数，使其远离魔方中心
 
-                        // Correct usage of ProjectWorldToScreen
-                        if (UGameplayStatics::ProjectWorldToScreen(PC, FaceRotateDirection, ScreenSpaceRotateDirection, false))
+                        // 将世界坐标转换为屏幕坐标
+                        FVector2D RotateDirectionScreenSpace;
+                        if (UGameplayStatics::ProjectWorldToScreen(PC, RotateDirectionWorldSpace, RotateDirectionScreenSpace, false))
                         {
-                            // 将屏幕空间旋转方向转换为 FVector2D
-                            FVector2D ScreenSpaceRotateDirectionVector(ScreenSpaceRotateDirection.X, ScreenSpaceRotateDirection.Y);
+                            // 计算屏幕空间旋转方向向量
+                            FVector2D ScreenSpaceRotateDirectionVector = RotateDirectionScreenSpace - MagicCubeCenterScreenSpace;
                             ScreenSpaceRotateDirectionVector.Normalize(); // 标准化屏幕空间旋转方向
 
                             // 计算点积
@@ -263,6 +274,12 @@ void ACustomPawn::Tick(float DeltaTime)
 
                             // 使用点积的绝对值
                             float DotProductAbs = FMath::Abs(DotProduct);
+
+                            // 打印当前面的点积绝对值
+                            FString FaceName = StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(Face));
+                            FString DotProductMessage = FString::Printf(TEXT("  面: %s, 点积绝对值: %.2f"), *FaceName, DotProductAbs);
+                            GEngine->AddOnScreenDebugMessage(-1, DeltaTime, FColor::Blue, DotProductMessage);
+                            UE_LOG(LogTemp, Warning, TEXT("%s"), *DotProductMessage);
 
                             // 更新最大点积绝对值和对应的面
                             if (DotProductAbs > MaxDotProductAbs)
