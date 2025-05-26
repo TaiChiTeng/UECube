@@ -263,6 +263,8 @@ void ACustomPawn::Tick(float DeltaTime)
 
                         // 将世界坐标转换为屏幕坐标
                         FVector2D RotateDirectionScreenSpace;
+
+                        // **关键修改：确保使用当前摄像机信息进行投影**
                         if (UGameplayStatics::ProjectWorldToScreen(PC, RotateDirectionWorldSpace, RotateDirectionScreenSpace, false))
                         {
                             // 计算屏幕空间旋转方向向量
