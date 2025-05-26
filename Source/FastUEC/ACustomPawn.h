@@ -8,6 +8,7 @@
 
 // 前向声明枚举类和魔方Actor类，避免直接包含 MagicCubeActor.h 带来的耦合
 enum class ECubeAxis : uint8;
+enum class EMagicCubeFace : uint8; // 添加 EMagicCubeFace 前向声明
 class AMagicCubeActor;
 
 #include "ACustomPawn.generated.h"
@@ -18,13 +19,20 @@ class FASTUEC_API ACustomPawn : public APawn
     GENERATED_BODY()
 
 public:
+    // 构造函数
     ACustomPawn();
 
 protected:
+    // BeginPlay 函数
     virtual void BeginPlay() override;
+
+    // 设置输入组件
     virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+
+    // Tick 函数
     virtual void Tick(float DeltaTime) override;
 
+private:
     // 鼠标右键控制摄像机
     void OnRightMousePressed();
     void OnRightMouseReleased();
@@ -48,6 +56,15 @@ private:
 
     // 是否击中魔方
     bool bIsMagicCubeHit;
+
+    // 缓存击中的魔方 Actor
+    AMagicCubeActor* CachedMagicCube;
+
+    // 缓存击中的魔方块所属的面集合
+    TArray<EMagicCubeFace> CachedFaces;
+
+    // 缓存击中的魔方块目标面集合 (用于计算旋转方向)
+    TArray<EMagicCubeFace> CachedTargetFaces;
 
 public:
     // 摄像机相关

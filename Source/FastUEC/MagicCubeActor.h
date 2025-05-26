@@ -43,6 +43,14 @@ public:
     UFUNCTION(BlueprintPure, Category = "MagicCube")
     FVector GetFaceNormal(EMagicCubeFace Face) const; // 声明为const，表明不修改对象状态
 
+    // 获取面的顺时针旋转向量
+    UFUNCTION(BlueprintPure, Category = "MagicCube")
+    EMagicCubeFace GetOppositeFace(EMagicCubeFace Face) const; // 声明为const，表明不修改对象状态
+
+    // 获取面的反面
+    UFUNCTION(BlueprintPure, Category = "MagicCube")
+    FVector GetFaceRotateDirection(EMagicCubeFace Face) const; // 声明为const，表明不修改对象状态
+
     UFUNCTION(BlueprintCallable, Category = "MagicCube")
     void BeginLayerRotation(ECubeAxis Axis, int32 Layer);
 

@@ -8,6 +8,7 @@
 #include "DrawDebugHelpers.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "EngineUtils.h"
+#include "Kismet/GameplayStatics.h" // 包含 UGameplayStatics 头文件
 
 ACustomPawn::ACustomPawn()
 {
@@ -126,27 +127,28 @@ void ACustomPawn::OnLeftMousePressedCube()
         if (bHit && HitResult.GetActor())
         {
             // 尝试获取魔方Actor
-            if (AMagicCubeActor* MagicCube = Cast<AMagicCubeActor>(HitResult.GetActor()))
+            CachedMagicCube = Cast<AMagicCubeActor>(HitResult.GetActor());
+            if (CachedMagicCube)
             {
                 bIsMagicCubeHit = true; // 设置击中魔方标志
 
                 // 计算点击到的块索引
-                const FVector LocalPosition = MagicCube->GetActorTransform().InverseTransformPosition(HitResult.ImpactPoint);
-                const int32 x = FMath::RoundToInt((LocalPosition.X + (MagicCube->Dimensions[0] - 1) * 0.5f * MagicCube->BlockSize) / MagicCube->BlockSize);
-                const int32 y = FMath::RoundToInt((LocalPosition.Y + (MagicCube->Dimensions[1] - 1) * 0.5f * MagicCube->BlockSize) / MagicCube->BlockSize);
-                const int32 z = FMath::RoundToInt((LocalPosition.Z + (MagicCube->Dimensions[2] - 1) * 0.5f * MagicCube->BlockSize) / MagicCube->BlockSize);
+                const FVector LocalPosition = CachedMagicCube->GetActorTransform().InverseTransformPosition(HitResult.ImpactPoint);
+                const int32 x = FMath::RoundToInt((LocalPosition.X + (CachedMagicCube->Dimensions[0] - 1) * 0.5f * CachedMagicCube->BlockSize) / CachedMagicCube->BlockSize);
+                const int32 y = FMath::RoundToInt((LocalPosition.Y + (CachedMagicCube->Dimensions[1] - 1) * 0.5f * CachedMagicCube->BlockSize) / CachedMagicCube->BlockSize);
+                const int32 z = FMath::RoundToInt((LocalPosition.Z + (CachedMagicCube->Dimensions[2] - 1) * 0.5f * CachedMagicCube->BlockSize) / CachedMagicCube->BlockSize);
 
-                const int32 BlockIndex = MagicCube->GetLinearIndex(x, y, z);
+                const int32 BlockIndex = CachedMagicCube->GetLinearIndex(x, y, z);
 
                 // 获取归属面集合
-                TArray<EMagicCubeFace> Faces = MagicCube->GetCubeFacesForBlock(x, y, z);
+                CachedFaces = CachedMagicCube->GetCubeFacesForBlock(x, y, z);
 
                 // 找到射线击中面
                 EMagicCubeFace HitFace = EMagicCubeFace::Top; // 默认值
                 float MaxDot = -1.0f;
-                for (EMagicCubeFace Face : Faces) // 遍历归属面集合
+                for (EMagicCubeFace Face : CachedFaces) // 遍历归属面集合
                 {
-                    FVector FaceNormal = MagicCube->GetFaceNormal(Face);
+                    FVector FaceNormal = CachedMagicCube->GetFaceNormal(Face);
                     float DotProduct = FVector::DotProduct(FaceNormal, HitResult.ImpactNormal);
                     if (DotProduct > MaxDot)
                     {
@@ -156,40 +158,30 @@ void ACustomPawn::OnLeftMousePressedCube()
                 }
 
                 // 找到射线击中面的反面
-                EMagicCubeFace OppositeFace = EMagicCubeFace::Bottom; // 默认值
-                for (EMagicCubeFace Face : Faces) // 遍历归属面集合
-                {
-                    FVector FaceNormal = MagicCube->GetFaceNormal(Face);
-                    float DotProduct = FVector::DotProduct(FaceNormal, -HitResult.ImpactNormal);
-                    if (FMath::IsNearlyEqual(DotProduct, 1.0f)) // 完全相反
-                    {
-                        OppositeFace = Face;
-                        break;
-                    }
-                }
+                EMagicCubeFace OppositeFace = CachedMagicCube->GetOppositeFace(HitFace);
 
                 // 计算目标面集合
-                TArray<EMagicCubeFace> TargetFaces = Faces;
-                TargetFaces.Remove(HitFace);
-                TargetFaces.Remove(OppositeFace);
+                CachedTargetFaces = CachedFaces;
+                CachedTargetFaces.Remove(HitFace);
+                CachedTargetFaces.Remove(OppositeFace);
 
                 // 构造归属面集合字符串
                 FString FaceNames;
-                for (EMagicCubeFace Face : Faces)
+                for (EMagicCubeFace Face : CachedFaces)
                 {
                     FaceNames += StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(Face)) + TEXT(" ");
                 }
 
                 // 构造目标面集合字符串
                 FString TargetFaceNames;
-                for (EMagicCubeFace Face : TargetFaces)
+                for (EMagicCubeFace Face : CachedTargetFaces)
                 {
                     TargetFaceNames += StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(Face)) + TEXT(" ");
                 }
 
                 // 打印信息
                 FString Message = FString::Printf(TEXT("点击到魔方块，所属魔方Actor: %s，块索引: %d，归属面集合: %s\n射线击中面: %s\n射线击中面的反面: %s\n目标面集合: %s"),
-                    *MagicCube->GetName(), BlockIndex, *FaceNames,
+                    *CachedMagicCube->GetName(), BlockIndex, *FaceNames,
                     *StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(HitFace)),
                     *StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(OppositeFace)),
                     *TargetFaceNames);
@@ -207,8 +199,8 @@ void ACustomPawn::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
-    // 只有在击中魔方且未达到阈值时才执行
-    if (bIsMagicCubeHit && bIsDraggingCube && !bThresholdReached)
+    // 只有在击中魔方且正在拖拽时才执行
+    if (bIsMagicCubeHit && bIsDraggingCube)
     {
         if (APlayerController* PC = Cast<APlayerController>(GetController()))
         {
@@ -230,12 +222,54 @@ void ACustomPawn::Tick(float DeltaTime)
             InitialMousePosition = FVector2D(CurrentMouseX, CurrentMouseY);
 
             // 检查是否达到阈值
-            if (TotalDragDistance >= DragThreshold)
+            if (!bThresholdReached && TotalDragDistance >= DragThreshold)
             {
                 bThresholdReached = true;
                 FString Message = FString::Printf(TEXT("鼠标拖动已经达到检测阈值"));
                 GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, Message);
                 UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
+
+                // 在达到阈值时计算点积
+                if (CachedMagicCube && Camera)
+                {
+                    // 获取鼠标位移向量
+                    FVector2D MouseMovementVector = TotalMouseMovement.GetSafeNormal(); // 使用GetSafeNormal进行标准化
+
+                    // 遍历目标面集合，计算鼠标位移和各目标面元素的点积
+                    for (EMagicCubeFace Face : CachedTargetFaces)
+                    {
+                        // 获取面的旋转方向
+                        FVector FaceRotateDirection = CachedMagicCube->GetFaceRotateDirection(Face);
+
+                        // 将旋转方向转换为屏幕空间向量（这里需要根据您的摄像机设置进行调整）
+                        // 使用 UGameplayStatics::ProjectWorldToScreen 进行坐标转换
+                        FVector2D ScreenSpaceRotateDirection;
+                        FVector2D ScreenPosition;
+                        bool bSuccess = UGameplayStatics::ProjectWorldToScreen(GetWorld()->GetFirstPlayerController(), FaceRotateDirection, ScreenPosition, false);
+
+                        if (bSuccess)
+                        {
+                            ScreenSpaceRotateDirection.X = ScreenPosition.X;
+                            ScreenSpaceRotateDirection.Y = ScreenPosition.Y;
+
+                            // 将屏幕空间旋转方向转换为 FVector2D
+                            FVector2D ScreenSpaceRotateDirectionVector(ScreenSpaceRotateDirection.X, ScreenSpaceRotateDirection.Y);
+
+                            // 计算点积
+                            float DotProduct = FVector2D::DotProduct(MouseMovementVector, ScreenSpaceRotateDirectionVector);
+
+                            // 打印点积结果
+                            FString FaceName = StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(Face));
+                            FString DotProductMessage = FString::Printf(TEXT("目标面 %s 与鼠标位移的点积结果: %.2f"), *FaceName, DotProduct);
+                            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Purple, DotProductMessage);
+                            UE_LOG(LogTemp, Warning, TEXT("%s"), *DotProductMessage);
+                        }
+                        else
+                        {
+                            UE_LOG(LogTemp, Warning, TEXT("世界坐标到屏幕坐标转换失败！"));
+                        }
+                    }
+                }
             }
             else
             {
@@ -260,7 +294,7 @@ void ACustomPawn::OnLeftMouseReleasedCube()
         // 根据是否达到阈值设置不同的消息和颜色
         if (bThresholdReached)
         {
-            Message = FString::Printf(TEXT("拖拽结束，累计鼠标位移: X=%.2f, Y=%.2f, 累计距离: %.2f"), TotalMouseMovement.X, TotalMouseMovement.Y, TotalDragDistance);
+            Message = FString::Printf(TEXT("拖拽结束，累计鼠标位移: X=%.2f, Y=%.2f, 累计距离: %.2f"));
             TextColor = FColor::Cyan;
         }
         else
@@ -279,5 +313,8 @@ void ACustomPawn::OnLeftMouseReleasedCube()
         TotalDragDistance = 0.f;
         bThresholdReached = false;
         bIsMagicCubeHit = false;
+        CachedMagicCube = nullptr;
+        CachedFaces.Empty();
+        CachedTargetFaces.Empty();
     }
 }

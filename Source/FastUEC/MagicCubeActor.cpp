@@ -535,3 +535,62 @@ FVector AMagicCubeActor::GetFaceNormal(EMagicCubeFace Face) const
         return FVector::ZeroVector; // 返回零向量表示错误
     }
 }
+
+// 获取面"顺时针"旋转的向量
+FVector AMagicCubeActor::GetFaceRotateDirection(EMagicCubeFace Face) const
+{
+    // 调用示例：
+    // 获取顶面的顺时针旋转向量
+    // FVector TopRotationAxis = GetFaceRotateDirection(EMagicCubeFace::Top);
+    // UE_LOG(LogTemp, Warning, TEXT("Top Face Rotation Axis: %s"), *TopRotationAxis.ToString());
+    // 获取左面的顺时针旋转向量
+    // FVector LeftRotationAxis = GetFaceRotateDirection(EMagicCubeFace::Left);
+    // UE_LOG(LogTemp, Warning, TEXT("Left Face Rotation Axis: %s"), *LeftRotationAxis.ToString());
+    
+    // 定义面与顺时针旋转向量的映射
+    // Teng：这里AI容易错，UE是左手坐标系，X是食指红色（对准屏幕），Y是中指绿色（对准屏幕右方），Z是大拇指蓝色（对准屏幕上方）
+    TMap<EMagicCubeFace, FVector> ClockRotateNormals = {
+        {EMagicCubeFace::Top, FVector(0, 1, 0)},
+        {EMagicCubeFace::Bottom, FVector(0, -1, 0)},
+        {EMagicCubeFace::Front, FVector(0, 0, -1)},
+        {EMagicCubeFace::Back, FVector(0, 0, 1)},
+        {EMagicCubeFace::Left, FVector(1, 0, 0)},
+        {EMagicCubeFace::Right, FVector(-1, 0, 0)},
+    };
+
+    // 查找对应面的顺时针旋转轴向量，如果找不到则返回零向量
+    if (ClockRotateNormals.Contains(Face))
+    {
+        return ClockRotateNormals[Face];
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("No clockwise rotation axis defined for face %d"), static_cast<int32>(Face));
+        return FVector::ZeroVector; // 返回零向量表示错误
+    }
+}
+// 获取面的反面
+EMagicCubeFace AMagicCubeActor::GetOppositeFace(EMagicCubeFace Face) const
+{
+    // 定义面与反面的映射
+    // Teng：这里AI容易错，UE是左手坐标系，X是食指红色（对准屏幕），Y是中指绿色（对准屏幕右方），Z是大拇指蓝色（对准屏幕上方）
+    TMap<EMagicCubeFace, EMagicCubeFace> FaceAnti = {
+        {EMagicCubeFace::Top, EMagicCubeFace::Bottom},
+        {EMagicCubeFace::Bottom, EMagicCubeFace::Top},
+        {EMagicCubeFace::Front, EMagicCubeFace::Back},
+        {EMagicCubeFace::Back, EMagicCubeFace::Front},
+        {EMagicCubeFace::Left, EMagicCubeFace::Right},
+        {EMagicCubeFace::Right, EMagicCubeFace::Left},
+    };
+
+    // 查找对应面的反面，如果找不到则返回原面
+    if (FaceAnti.Contains(Face))
+    {
+        return FaceAnti[Face];
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("No opposite face defined for face %d"), static_cast<int32>(Face));
+        return Face; // 返回原面表示错误
+    }
+}
