@@ -202,7 +202,8 @@ void ACustomPawn::Tick(float DeltaTime)
     // 只有在击中魔方且正在拖拽时才执行
     if (bIsMagicCubeHit && bIsDraggingCube)
     {
-        if (APlayerController* PC = Cast<APlayerController>(GetController()))
+        APlayerController* PC = Cast<APlayerController>(GetController()); // 将PC的定义放在这里
+        if (PC)
         {
             // 获取当前鼠标位置
             float CurrentMouseX, CurrentMouseY;
@@ -229,46 +230,58 @@ void ACustomPawn::Tick(float DeltaTime)
                 GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, Message);
                 UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
 
-                // 在达到阈值时计算点积
+                // 在达到阈值时，遍历目标面集合，找出目标面集合里边，面的法向量 和 鼠标位移 最接近平行的法向量，打印出这个面，我们把它称作“旋转面”。
                 if (CachedMagicCube && Camera)
                 {
                     // 获取鼠标位移向量
                     FVector2D MouseMovementVector = TotalMouseMovement.GetSafeNormal(); // 使用GetSafeNormal进行标准化
+
+                    // 初始化最大点积绝对值和对应的面
+                    float MaxDotProductAbs = 0.0f;
+                    EMagicCubeFace RotationFace = EMagicCubeFace::Top; // 默认值
 
                     // 遍历目标面集合，计算鼠标位移和各目标面元素的点积
                     for (EMagicCubeFace Face : CachedTargetFaces)
                     {
                         // 获取面的旋转方向
                         FVector FaceRotateDirection = CachedMagicCube->GetFaceRotateDirection(Face);
+                        FaceRotateDirection.Normalize(); // 标准化旋转方向
 
                         // 将旋转方向转换为屏幕空间向量（这里需要根据您的摄像机设置进行调整）
                         // 使用 UGameplayStatics::ProjectWorldToScreen 进行坐标转换
                         FVector2D ScreenSpaceRotateDirection;
-                        FVector2D ScreenPosition;
-                        bool bSuccess = UGameplayStatics::ProjectWorldToScreen(GetWorld()->GetFirstPlayerController(), FaceRotateDirection, ScreenPosition, false);
 
-                        if (bSuccess)
+                        // Correct usage of ProjectWorldToScreen
+                        if (UGameplayStatics::ProjectWorldToScreen(PC, FaceRotateDirection, ScreenSpaceRotateDirection, false))
                         {
-                            ScreenSpaceRotateDirection.X = ScreenPosition.X;
-                            ScreenSpaceRotateDirection.Y = ScreenPosition.Y;
-
                             // 将屏幕空间旋转方向转换为 FVector2D
                             FVector2D ScreenSpaceRotateDirectionVector(ScreenSpaceRotateDirection.X, ScreenSpaceRotateDirection.Y);
+                            ScreenSpaceRotateDirectionVector.Normalize(); // 标准化屏幕空间旋转方向
 
                             // 计算点积
                             float DotProduct = FVector2D::DotProduct(MouseMovementVector, ScreenSpaceRotateDirectionVector);
 
-                            // 打印点积结果
-                            FString FaceName = StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(Face));
-                            FString DotProductMessage = FString::Printf(TEXT("目标面 %s 与鼠标位移的点积结果: %.2f"), *FaceName, DotProduct);
-                            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Purple, DotProductMessage);
-                            UE_LOG(LogTemp, Warning, TEXT("%s"), *DotProductMessage);
+                            // 使用点积的绝对值
+                            float DotProductAbs = FMath::Abs(DotProduct);
+
+                            // 更新最大点积绝对值和对应的面
+                            if (DotProductAbs > MaxDotProductAbs)
+                            {
+                                MaxDotProductAbs = DotProductAbs;
+                                RotationFace = Face;
+                            }
                         }
                         else
                         {
                             UE_LOG(LogTemp, Warning, TEXT("世界坐标到屏幕坐标转换失败！"));
                         }
                     }
+
+                    // 打印旋转面
+                    FString RotationFaceName = StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(RotationFace));
+                    FString RotationFaceMessage = FString::Printf(TEXT("旋转面: %s, 最大点积绝对值: %.2f"), *RotationFaceName, MaxDotProductAbs);
+                    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Purple, RotationFaceMessage);
+                    UE_LOG(LogTemp, Warning, TEXT("%s"), *RotationFaceMessage);
                 }
             }
             else
@@ -294,7 +307,7 @@ void ACustomPawn::OnLeftMouseReleasedCube()
         // 根据是否达到阈值设置不同的消息和颜色
         if (bThresholdReached)
         {
-            Message = FString::Printf(TEXT("拖拽结束，累计鼠标位移: X=%.2f, Y=%.2f, 累计距离: %.2f"));
+            Message = FString::Printf(TEXT("拖拽结束，累计鼠标位移: X=%.2f, Y=%.2f, 累计距离: %.2f"), TotalMouseMovement.X, TotalMouseMovement.Y, TotalDragDistance);
             TextColor = FColor::Cyan;
         }
         else
