@@ -594,3 +594,53 @@ EMagicCubeFace AMagicCubeActor::GetOppositeFace(EMagicCubeFace Face) const
         return Face; // 返回原面表示错误
     }
 }
+
+// 获取面的旋转轴
+ECubeAxis AMagicCubeActor::GetRotateAxis(EMagicCubeFace Face) const
+{
+    // 定义面与旋转轴的映射
+    TMap<EMagicCubeFace, ECubeAxis> FaceRotateAxis = {
+        {EMagicCubeFace::Top, ECubeAxis::Z},
+        {EMagicCubeFace::Bottom, ECubeAxis::Z},
+        {EMagicCubeFace::Front, ECubeAxis::X},
+        {EMagicCubeFace::Back, ECubeAxis::X},
+        {EMagicCubeFace::Left, ECubeAxis::Y},
+        {EMagicCubeFace::Right, ECubeAxis::Y},
+    };
+
+    // 查找对应面的旋转轴，如果找不到则返回X轴
+    if (FaceRotateAxis.Contains(Face))
+    {
+        return FaceRotateAxis[Face];
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("No rotate axis defined for face %d"), static_cast<int32>(Face));
+        return ECubeAxis::X; // 返回X轴表示错误或未定义
+    }
+}
+
+// 获取面的层索引
+int32 AMagicCubeActor::GetLayerIndex(EMagicCubeFace Face) const
+{
+    // 定义面与层索引的映射
+    TMap<EMagicCubeFace, int32> FaceLayerIndex = {
+        {EMagicCubeFace::Top, Dimensions[2] - 1},
+        {EMagicCubeFace::Bottom, 0},
+        {EMagicCubeFace::Front, 0},
+        {EMagicCubeFace::Back, Dimensions[0] - 1},
+        {EMagicCubeFace::Left, 0},
+        {EMagicCubeFace::Right, Dimensions[1] - 1},
+    };
+
+    // 查找对应面的层索引，如果找不到则返回-1
+    if (FaceLayerIndex.Contains(Face))
+    {
+        return FaceLayerIndex[Face];
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("No layer index defined for face %d"), static_cast<int32>(Face));
+        return -1; // 返回-1表示错误或未定义
+    }
+}
