@@ -44,7 +44,6 @@ ACustomPawn::ACustomPawn()
     DragThreshold = 20.f; // 设置拖动阈值
     bThresholdReached = false; // 初始化阈值是否达到标志
     CurrentRotationAngle = 0.f; // 初始化当前旋转角度
-    LastAngleDeltaSign = 1.0f; // 初始化上一帧旋转角度增量的符号
 
     bIsMagicCubeHit = false; // 初始化是否击中魔方
 }
@@ -113,7 +112,6 @@ void ACustomPawn::OnLeftMousePressedCube()
         TotalDragDistance = 0.f;
         bThresholdReached = false; // 重置阈值达到标志
         CurrentRotationAngle = 0.f; // 重置当前旋转角度
-        LastAngleDeltaSign = 1.0f; // 重置上一帧旋转角度增量的符号
 
         // 获取初始鼠标位置
         PC->GetMousePosition(InitialMousePosition.X, InitialMousePosition.Y);
@@ -349,17 +347,8 @@ void ACustomPawn::Tick(float DeltaTime)
                     float Angle = FMath::Acos(DotProduct);
 
                     // 旋转角度的符号取决于叉积的方向
-                    float RotationSpeed = 0.05f; //调整旋转速度
+                    float RotationSpeed = 0.1f; //调整旋转速度
                     float AngleDelta = Angle * RotationSpeed * (CrossProduct | Camera->GetForwardVector()) > 0 ? 1 : -1;
-
-                    // 检测旋转方向是否发生改变
-                    float CurrentAngleDeltaSign = AngleDelta > 0 ? 1.0f : -1.0f;
-                    if (CurrentAngleDeltaSign != LastAngleDeltaSign)
-                    {
-                        // 如果旋转方向发生改变，则重置当前旋转角度
-                        CurrentRotationAngle = 0.0f;
-                        LastAngleDeltaSign = CurrentAngleDeltaSign;
-                    }
 
                     // 累加旋转角度
                     CurrentRotationAngle += AngleDelta * DistanceThisFrame;
@@ -427,6 +416,5 @@ void ACustomPawn::OnLeftMouseReleasedCube()
         CachedFaces.Empty();
         CachedTargetFaces.Empty();
         CurrentRotationAngle = 0.f;
-        LastAngleDeltaSign = 1.0f;
     }
 }

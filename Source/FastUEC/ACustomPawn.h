@@ -50,7 +50,6 @@ private:
     float TotalDragDistance;
     FVector2D InitialMousePosition; // 记录初始鼠标位置
     float CurrentRotationAngle; // 当前旋转的角度
-    float LastAngleDeltaSign; // 上一帧旋转角度增量的符号
 
     // 拖动阈值
     float DragThreshold;

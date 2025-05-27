@@ -1,420 +1,646 @@
-#include "ACustomPawn.h"
 #include "MagicCubeActor.h"
-#include "Camera/CameraComponent.h"
-#include "GameFramework/SpringArmComponent.h"
-#include "Components/InputComponent.h"
-#include "Components/SceneComponent.h"
-#include "Engine/Engine.h"
-#include "DrawDebugHelpers.h"
-#include "Components/InstancedStaticMeshComponent.h"
-#include "EngineUtils.h"
-#include "Kismet/GameplayStatics.h" // 包含 UGameplayStatics 头文件
+#include "Kismet/KismetMathLibrary.h"
 
-ACustomPawn::ACustomPawn()
+AMagicCubeActor::AMagicCubeActor()
 {
     PrimaryActorTick.bCanEverTick = true;
-
-    // 设置初始位置与根组件
-    SetActorLocation(FVector::ZeroVector);
-    RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("RootComponent"));
-
-    // 弹簧臂
-    SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
-    SpringArm->SetupAttachment(RootComponent);
-    SpringArm->TargetArmLength = 550.f;
-    SpringArm->bUsePawnControlRotation = false;
-    SpringArm->SetRelativeLocation(FVector(0.f, 0.f, 50.f));
-    SpringArm->SetRelativeRotation(FRotator(0.f, -40.f, 0.f));
-    SpringArm->bDoCollisionTest = false;
-
-    // 摄像机
-    Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
-    Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
-    Camera->bUsePawnControlRotation = false;
-
-    // 初始状态
-    bCameraIsRotating = false;
-    MinPitch = -75.f;
-    MaxPitch = 75.f;
-
-    // 初始化鼠标拖拽状态
-    bIsDraggingCube = false;
-    TotalMouseMovement = FVector2D::ZeroVector;
-    TotalDragDistance = 0.f;
-    DragThreshold = 20.f; // 设置拖动阈值
-    bThresholdReached = false; // 初始化阈值是否达到标志
-    CurrentRotationAngle = 0.f; // 初始化当前旋转角度
-
-    bIsMagicCubeHit = false; // 初始化是否击中魔方
+    
+    RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+    
+    InstancedMesh = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("InstancedMesh"));
+    InstancedMesh->SetupAttachment(RootComponent);
+    InstancedMesh->SetCollisionProfileName(TEXT("BlockAll"));
+    
+    // 如果 Dimensions 未设置，则默认使用 1x1x1 魔方
+    if (Dimensions.Num() != 3)
+    {
+        Dimensions = { 1, 1, 1 };
+    }
 }
 
-void ACustomPawn::BeginPlay()
+void AMagicCubeActor::OnConstruction(const FTransform& Transform)
+{
+    int32 TotalCells = Dimensions[0] * Dimensions[1] * Dimensions[2];
+    if (LayoutMask.Num() != TotalCells)
+    {
+        LayoutMask.Init(true, TotalCells);
+    }
+    
+    if (CubeMesh)
+    {
+        InstancedMesh->SetStaticMesh(CubeMesh);
+    }
+    if (CubeMaterial)
+    {
+        InstancedMesh->SetMaterial(0, CubeMaterial);
+    }
+    
+    InstancedMesh->ClearInstances();
+    InitializeCube();
+    
+    if (Dimensions.Num() >= 3)
+    {
+        InitializeTopParts();
+    }
+}
+
+void AMagicCubeActor::BeginPlay()
 {
     Super::BeginPlay();
-    SetActorLocation(FVector::ZeroVector);
-    if (APlayerController* PC = Cast<APlayerController>(GetController()))
+    InitialTransforms.Empty();
+    int32 InstanceCount = InstancedMesh->GetInstanceCount();
+    for (int32 i = 0; i < InstanceCount; i++)
     {
-        PC->bShowMouseCursor = true;
+        FTransform Transform;
+        InstancedMesh->GetInstanceTransform(i, Transform, true);
+        InitialTransforms.Add(Transform);
     }
 }
 
-void ACustomPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+void AMagicCubeActor::Tick(float DeltaTime)
 {
-    Super::SetupPlayerInputComponent(PlayerInputComponent);
-
-    // 右键控制摄像机
-    PlayerInputComponent->BindAction("RightMouse", IE_Pressed, this, &ACustomPawn::OnRightMousePressed);
-    PlayerInputComponent->BindAction("RightMouse", IE_Released, this, &ACustomPawn::OnRightMouseReleased);
-
-    // 左键拖拽交互：绑定鼠标左键按下与释放
-    PlayerInputComponent->BindAction("LeftMouse", IE_Pressed, this, &ACustomPawn::OnLeftMousePressedCube);
-    PlayerInputComponent->BindAction("LeftMouse", IE_Released, this, &ACustomPawn::OnLeftMouseReleasedCube);
-
-    PlayerInputComponent->BindAxis("Turn", this, &ACustomPawn::Turn);
-    PlayerInputComponent->BindAxis("LookUp", this, &ACustomPawn::LookUp);
-}
-
-//////////////////////////////////////////////////////////////////////////
-// 摄像机控制
-//////////////////////////////////////////////////////////////////////////
-void ACustomPawn::OnRightMousePressed() { bCameraIsRotating = true; }
-void ACustomPawn::OnRightMouseReleased() { bCameraIsRotating = false; }
-
-void ACustomPawn::Turn(float AxisValue)
-{
-    if (bCameraIsRotating && FMath::Abs(AxisValue) > KINDA_SMALL_NUMBER)
+    Super::Tick(DeltaTime);
+    
+    if (FMath::Abs(CurrentRotation.RemainingDegrees) > KINDA_SMALL_NUMBER)
     {
-        FRotator CurrRot = SpringArm->GetComponentRotation();
-        CurrRot.Yaw += AxisValue;
-        SpringArm->SetWorldRotation(CurrRot);
-    }
-}
-
-void ACustomPawn::LookUp(float AxisValue)
-{
-    if (bCameraIsRotating && FMath::Abs(AxisValue) > KINDA_SMALL_NUMBER)
-    {
-        FRotator CurrRot = SpringArm->GetComponentRotation();
-        float NewPitch = FMath::Clamp(CurrRot.Pitch + AxisValue, MinPitch, MaxPitch);
-        CurrRot.Pitch = NewPitch;
-        SpringArm->SetWorldRotation(CurrRot);
-    }
-}
-
-// 当鼠标左键按下时：记录屏幕坐标、射线检测选中魔方块，构造候选面集合，并利用 HitNormal 计算射线碰撞平面
-void ACustomPawn::OnLeftMousePressedCube()
-{
-    if (APlayerController* PC = Cast<APlayerController>(GetController()))
-    {
-        // 初始化鼠标拖拽状态
-        bIsDraggingCube = true;
-        TotalMouseMovement = FVector2D::ZeroVector;
-        TotalDragDistance = 0.f;
-        bThresholdReached = false; // 重置阈值达到标志
-        CurrentRotationAngle = 0.f; // 重置当前旋转角度
-
-        // 获取初始鼠标位置
-        PC->GetMousePosition(InitialMousePosition.X, InitialMousePosition.Y);
-
-        // 执行射线检测
-        FHitResult HitResult;
-        bool bHit = PC->GetHitResultUnderCursorByChannel(
-            UEngineTypes::ConvertToTraceType(ECC_Visibility),
-            true, // 复杂碰撞检测
-            HitResult
-        );
-
-        bIsMagicCubeHit = false; // 重置击中魔方标志
-
-        if (bHit && HitResult.GetActor())
+        float DeltaRotation = FMath::Sign(CurrentRotation.RemainingDegrees) *
+            FMath::Min(RotationSpeed * DeltaTime, FMath::Abs(CurrentRotation.RemainingDegrees));
+        
+        ApplyRotationToInstances(DeltaRotation);
+        CurrentRotation.RemainingDegrees -= DeltaRotation;
+        
+        if (FMath::IsNearlyZero(CurrentRotation.RemainingDegrees))
         {
-            // 尝试获取魔方Actor
-            CachedMagicCube = Cast<AMagicCubeActor>(HitResult.GetActor());
-            if (CachedMagicCube)
+            // 更新全局初始变换：对于每个受影响的实例，保存最新状态
+            for (int32 Index : CurrentRotation.AffectedInstances)
             {
-                bIsMagicCubeHit = true; // 设置击中魔方标志
-
-                // 计算点击到的块索引
-                const FVector LocalPosition = CachedMagicCube->GetActorTransform().InverseTransformPosition(HitResult.ImpactPoint);
-                const int32 x = FMath::RoundToInt((LocalPosition.X + (CachedMagicCube->Dimensions[0] - 1) * 0.5f * CachedMagicCube->BlockSize) / CachedMagicCube->BlockSize);
-                const int32 y = FMath::RoundToInt((LocalPosition.Y + (CachedMagicCube->Dimensions[1] - 1) * 0.5f * CachedMagicCube->BlockSize) / CachedMagicCube->BlockSize);
-                const int32 z = FMath::RoundToInt((LocalPosition.Z + (CachedMagicCube->Dimensions[2] - 1) * 0.5f * CachedMagicCube->BlockSize) / CachedMagicCube->BlockSize);
-
-                const int32 BlockIndex = CachedMagicCube->GetLinearIndex(x, y, z);
-
-                // 获取归属面集合
-                CachedFaces = CachedMagicCube->GetCubeFacesForBlock(x, y, z);
-
-                // 找到射线击中面
-                EMagicCubeFace HitFace = EMagicCubeFace::Top; // 默认值
-                float MaxDot = -1.0f;
-                for (EMagicCubeFace Face : CachedFaces) // 遍历归属面集合
+                FTransform T;
+                InstancedMesh->GetInstanceTransform(Index, T, true);
+                if (InitialTransforms.IsValidIndex(Index))
                 {
-                    FVector FaceNormal = CachedMagicCube->GetFaceNormal(Face);
-                    float DotProduct = FVector::DotProduct(FaceNormal, HitResult.ImpactNormal);
-                    if (DotProduct > MaxDot)
+                    InitialTransforms[Index] = T;
+                }
+            }
+            
+            // 对顶面部件，确保 TopPartInitialTransforms 数组与 TopPartComponents 数量匹配
+            if (CurrentRotation.Axis == ECubeAxis::Z && CurrentRotation.Layer == Dimensions[2]-1)
+            {
+                if (TopPartInitialTransforms.Num() != TopPartComponents.Num())
+                {
+                    TopPartInitialTransforms.Empty();
+                    for (int32 i = 0; i < TopPartComponents.Num(); i++)
                     {
-                        MaxDot = DotProduct;
-                        HitFace = Face;
+                        if (TopPartComponents[i])
+                            TopPartInitialTransforms.Add(TopPartComponents[i]->GetRelativeTransform());
                     }
                 }
-
-                // 找到射线击中面的反面
-                EMagicCubeFace OppositeFace = CachedMagicCube->GetOppositeFace(HitFace);
-
-                // 计算目标面集合
-                CachedTargetFaces = CachedFaces;
-                CachedTargetFaces.Remove(HitFace);
-                CachedTargetFaces.Remove(OppositeFace);
-
-                // 构造归属面集合字符串
-                FString FaceNames;
-                for (EMagicCubeFace Face : CachedFaces)
+                else
                 {
-                    FaceNames += StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(Face)) + TEXT(" ");
+                    for (int32 i = 0; i < TopPartComponents.Num(); i++)
+                    {
+                        if (TopPartComponents[i])
+                            TopPartInitialTransforms[i] = TopPartComponents[i]->GetRelativeTransform();
+                    }
                 }
+            }
+            
+            OnRotationComplete.Broadcast(CurrentRotation.Axis, CurrentRotation.Layer);
+            EndLayerRotationDrag();
+        }
+    }
+}
 
-                // 构造目标面集合字符串
-                FString TargetFaceNames;
-                for (EMagicCubeFace Face : CachedTargetFaces)
+void AMagicCubeActor::InitializeCube()
+{
+    float ComputedScale = 1.0f;
+    if (CubeMesh)
+    {
+        FBoxSphereBounds MeshBounds = CubeMesh->GetBounds();
+        float MeshSize = MeshBounds.BoxExtent.GetMax() * 2.0f;
+        if (MeshSize > KINDA_SMALL_NUMBER)
+        {
+            ComputedScale = BlockSize / MeshSize;
+        }
+    }
+    else
+    {
+        ComputedScale = BlockSize / 100.0f;
+    }
+    
+    for (int32 z = 0; z < Dimensions[2]; z++)
+    {
+        for (int32 y = 0; y < Dimensions[1]; y++)
+        {
+            for (int32 x = 0; x < Dimensions[0]; x++)
+            {
+                int32 LinearIndex = x + y * Dimensions[0] + z * Dimensions[0] * Dimensions[1];
+                bool bPlaceBlock = LayoutMask.IsValidIndex(LinearIndex) ? LayoutMask[LinearIndex] : true;
+                if (bPlaceBlock)
                 {
-                    TargetFaceNames += StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(Face)) + TEXT(" ");
+                    FTransform Transform;
+                    Transform.SetLocation(CalculatePosition(x, y, z));
+                    Transform.SetScale3D(FVector(ComputedScale));
+                    InstancedMesh->AddInstance(Transform);
                 }
-
-                // 打印信息
-                FString Message = FString::Printf(TEXT("点击到魔方块，所属魔方Actor: %s，块索引: %d，归属面集合: %s\n射线击中面: %s\n射线击中面的反面: %s\n目标面集合: %s"),
-                    *CachedMagicCube->GetName(), BlockIndex, *FaceNames,
-                    *StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(HitFace)),
-                    *StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(OppositeFace)),
-                    *TargetFaceNames);
-                GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, Message);
-                UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
             }
         }
     }
 }
 
-//
-// 在 Tick() 中实时更新拖拽旋转
-//
-void ACustomPawn::Tick(float DeltaTime)
+FVector AMagicCubeActor::CalculatePosition(int32 x, int32 y, int32 z) const
 {
-    Super::Tick(DeltaTime);
+    float OffsetX = (x - (Dimensions[0] - 1) / 2.0f) * BlockSize;
+    float OffsetY = (y - (Dimensions[1] - 1) / 2.0f) * BlockSize;
+    float OffsetZ = (z - (Dimensions[2] - 1) / 2.0f) * BlockSize;
+    return FVector(OffsetX, OffsetY, OffsetZ);
+}
 
-    // 只有在击中魔方且正在拖拽时才执行
-    if (bIsMagicCubeHit && bIsDraggingCube)
+int32 AMagicCubeActor::GetLinearIndex(int32 x, int32 y, int32 z) const
+{
+    return x + y * Dimensions[0] + z * Dimensions[0] * Dimensions[1];
+}
+
+void AMagicCubeActor::RotateLayer(ECubeAxis Axis, int32 LayerIndex, float Degrees)
+{
+    UE_LOG(LogTemp, Warning, TEXT("RotateLayer called: Axis=%d, LayerIndex=%d, Degrees=%f"), static_cast<int32>(Axis), LayerIndex, Degrees);
+    
+    if (FMath::Abs(CurrentRotation.RemainingDegrees) > KINDA_SMALL_NUMBER)
     {
-        APlayerController* PC = Cast<APlayerController>(GetController()); // 将PC的定义放在这里
-        if (PC && CachedMagicCube && Camera)
+        UE_LOG(LogTemp, Warning, TEXT("Rotation in progress. Ignoring new command."));
+        return;
+    }
+    
+    int32 DimIndex = GetDimensionIndex(Axis);
+    int32 MaxLayer = Dimensions[DimIndex] - 1;
+    if (LayerIndex < 0 || LayerIndex > MaxLayer)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("LayerIndex %d out of bounds (max %d)"), LayerIndex, MaxLayer);
+        return;
+    }
+    
+    CurrentRotation.Axis = Axis;
+    CurrentRotation.Layer = LayerIndex;
+    CurrentRotation.RemainingDegrees = Degrees;
+    CollectLayerInstances(Axis, LayerIndex, CurrentRotation.AffectedInstances);
+    UE_LOG(LogTemp, Warning, TEXT("Collected %d instances for rotation."), CurrentRotation.AffectedInstances.Num());
+}
+
+void AMagicCubeActor::SetLayerRotation(ECubeAxis Axis, int32 Layer, float Angle)
+{
+    // 如果当前拖拽数据不匹配，则初始化一次拖拽基准
+    if (!bIsDraggingRotation || !(CurrentDragAxis == Axis && CurrentDragLayer == Layer))
+    {
+        BeginLayerRotation(Axis, Layer);
+    }
+    
+    FVector RotationAxis;
+    switch (Axis)
+    {
+        case ECubeAxis::X: RotationAxis = FVector::ForwardVector; break;
+        case ECubeAxis::Y: RotationAxis = FVector::RightVector; break;
+        case ECubeAxis::Z: RotationAxis = FVector::UpVector; break;
+        default: RotationAxis = FVector::ZeroVector; break;
+    }
+    
+    FQuat RotQuat(RotationAxis, FMath::DegreesToRadians(Angle));
+    
+    // 对于拖拽过程中受影响的实例，使用 BeginLayerRotation 中保存的基准变换进行旋转
+    for (int32 i = 0; i < CurrentDragAffectedInstances.Num(); i++)
+    {
+        int32 idx = CurrentDragAffectedInstances[i];
+        if (CurrentDragBaseTransforms.IsValidIndex(i))
         {
-            // 获取当前鼠标位置
-            float CurrentMouseX, CurrentMouseY;
-            PC->GetMousePosition(CurrentMouseX, CurrentMouseY);
-
-            // 计算鼠标位移
-            FVector2D MouseDelta = FVector2D(CurrentMouseX, CurrentMouseY) - InitialMousePosition;
-
-            // 累加位移
-            TotalMouseMovement += MouseDelta;
-
-            // 计算距离
-            float DistanceThisFrame = MouseDelta.Size();
-            TotalDragDistance += DistanceThisFrame;
-
-            // 更新初始鼠标位置
-            InitialMousePosition = FVector2D(CurrentMouseX, CurrentMouseY);
-
-            // 检查是否达到阈值
-            if (!bThresholdReached && TotalDragDistance >= DragThreshold)
+            FTransform NewTransform = CurrentDragBaseTransforms[i];
+            NewTransform.SetLocation(RotQuat.RotateVector(NewTransform.GetLocation()));
+            NewTransform.SetRotation(RotQuat * NewTransform.GetRotation());
+            InstancedMesh->UpdateInstanceTransform(idx, NewTransform, true);
+        }
+    }
+    
+    // 同步更新顶面部件：不再仅限于 Z 轴旋转，
+    // 对于每个顶面部件，其对应的实例索引为：TopLayerStartIndex + i
+    int32 TopLayerStartIndex = Dimensions[0] * Dimensions[1] * (Dimensions[2]-1);
+    if (TopPartComponents.Num() > 0 && CurrentDragTopPartBaseTransforms.Num() == TopPartComponents.Num())
+    {
+        for (int32 i = 0; i < TopPartComponents.Num(); i++)
+        {
+            int32 BlockIndex = TopLayerStartIndex + i;
+            if (CurrentDragAffectedInstances.Contains(BlockIndex))
             {
-                bThresholdReached = true;
-                FString Message = FString::Printf(TEXT("鼠标拖动已经达到检测阈值"));
-                GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, Message);
-                UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
+                FTransform NewTransform = CurrentDragTopPartBaseTransforms[i];
+                NewTransform.SetLocation(RotQuat.RotateVector(NewTransform.GetLocation()));
+                NewTransform.SetRotation(RotQuat * NewTransform.GetRotation());
+                TopPartComponents[i]->SetRelativeTransform(NewTransform);
+            }
+        }
+    }
+    
+    InstancedMesh->MarkRenderStateDirty();
+}
 
-                // 获取鼠标位移向量，不再标准化
-                FVector2D MouseMovementVector = TotalMouseMovement;
+void AMagicCubeActor::CollectLayerInstances(ECubeAxis Axis, int32 Layer, TArray<int32>& OutInstances)
+{
+    OutInstances.Empty();
+    int32 Total = InstancedMesh->GetInstanceCount();
+    int32 DimIdx = GetDimensionIndex(Axis);
 
-                // 初始化最大点积绝对值和对应的面
-                float MaxDotProductAbs = 0.0f;
-                RotationFace = EMagicCubeFace::Top; // 默认值
+    // 在组件自身空间里，这一层对应的理想坐标
+    float CenterOffset = (Dimensions[DimIdx] - 1) * 0.5f;
+    float TargetLocal = (Layer - CenterOffset) * BlockSize;
+    const float Tol = 0.01f;
 
-                // 获取魔方中心的世界坐标
-                FVector MagicCubeCenter = CachedMagicCube->GetActorLocation();
+    for (int32 i = 0; i < Total; ++i)
+    {
+        // 直接拿「组件局部」Transform
+        FTransform LocalTr;
+        InstancedMesh->GetInstanceTransform(i, LocalTr, /*bWorldSpace=*/false);
 
-                // 将魔方中心的世界坐标转换为屏幕坐标
-                FVector2D MagicCubeCenterScreenSpace;
-                if (!UGameplayStatics::ProjectWorldToScreen(PC, MagicCubeCenter, MagicCubeCenterScreenSpace, false))
+        float V = (Axis == ECubeAxis::X ? LocalTr.GetLocation().X :
+                   Axis == ECubeAxis::Y ? LocalTr.GetLocation().Y :
+                                          LocalTr.GetLocation().Z);
+
+        if (FMath::Abs(V - TargetLocal) <= Tol)
+        {
+            OutInstances.Add(i);
+        }
+    }
+}
+
+void AMagicCubeActor::ApplyRotationToInstances(float DeltaDegrees)
+{
+    // 1. 计算旋转轴
+    FVector RotationAxis;
+    switch (CurrentRotation.Axis)
+    {
+        case ECubeAxis::X: RotationAxis = FVector::ForwardVector; break;
+        case ECubeAxis::Y: RotationAxis = FVector::RightVector;   break;
+        case ECubeAxis::Z: RotationAxis = FVector::UpVector;      break;
+        default:           RotationAxis = FVector::ZeroVector;    break;
+    }
+    FQuat DeltaQuat(RotationAxis, FMath::DegreesToRadians(DeltaDegrees));
+
+    // 2. 先算出这一轮所有实例的世界质心（Pivot）
+    FVector Pivot = FVector::ZeroVector;
+    for (int32 Index : CurrentRotation.AffectedInstances)
+    {
+        FTransform Tr;
+        InstancedMesh->GetInstanceTransform(Index, Tr, /*bWorldSpace=*/ true);
+        Pivot += Tr.GetLocation();
+    }
+    Pivot /= CurrentRotation.AffectedInstances.Num();
+
+    // 3. 围绕 Pivot 做旋转
+    for (int32 Index : CurrentRotation.AffectedInstances)
+    {
+        // 拿到当前 world-space Transform
+        FTransform Tr;
+        InstancedMesh->GetInstanceTransform(Index, Tr, /*bWorldSpace=*/ true);
+
+        // 移到枢轴原点、旋转、再移回
+        FVector LocalOffset = Tr.GetLocation() - Pivot;
+        FVector NewWorldPos = Pivot + DeltaQuat.RotateVector(LocalOffset);
+        FQuat   NewWorldRot = DeltaQuat * Tr.GetRotation();
+
+        FTransform NewTr;
+        NewTr.SetLocation(NewWorldPos);
+        NewTr.SetRotation(NewWorldRot);
+        NewTr.SetScale3D(Tr.GetScale3D());
+
+        InstancedMesh->UpdateInstanceTransform(Index, NewTr, /*bWorldSpace=*/ true, /*bMarkRenderStateDirty=*/ false);
+    }
+
+    // 4. 同步顶面部件（若有），同样围绕相同的 Pivot 做旋转
+    int32 TopLayerStartIndex = Dimensions[0] * Dimensions[1] * (Dimensions[2] - 1);
+    for (int32 i = 0; i < TopPartComponents.Num(); i++)
+    {
+        int32 BlockIndex = TopLayerStartIndex + i;
+        if (CurrentRotation.AffectedInstances.Contains(BlockIndex))
+        {
+            UStaticMeshComponent* Comp = TopPartComponents[i];
+            if (Comp)
+            {
+                // 取相对 Root 的世界 Transform
+                FTransform CompWorldTr = Comp->GetComponentTransform();
+                FVector LocalOffset = CompWorldTr.GetLocation() - Pivot;
+                FVector NewWorldPos = Pivot + DeltaQuat.RotateVector(LocalOffset);
+                FQuat   NewWorldRot = DeltaQuat * CompWorldTr.GetRotation();
+
+                // 转回相对 Root 的相对变换
+                FTransform NewRel = CompWorldTr;
+                NewRel.SetLocation(NewWorldPos);
+                NewRel.SetRotation(NewWorldRot);
+                Comp->SetWorldTransform(NewRel);
+            }
+        }
+    }
+
+    // 5. 最后一次性刷新渲染
+    InstancedMesh->MarkRenderStateDirty();
+}
+
+
+int32 AMagicCubeActor::GetDimensionIndex(ECubeAxis Axis) const
+{
+    switch (Axis)
+    {
+        case ECubeAxis::X: return 0;
+        case ECubeAxis::Y: return 1;
+        case ECubeAxis::Z: return 2;
+    }
+    return 0;
+}
+
+void AMagicCubeActor::Scramble(int32 Moves)
+{
+    for (int32 i = 0; i < Moves; i++)
+    {
+        ECubeAxis RandomAxis = static_cast<ECubeAxis>(FMath::RandRange(0, 2));
+        int32 RandomLayer = FMath::RandRange(0, Dimensions[GetDimensionIndex(RandomAxis)] - 1);
+        float RandomAngle = (FMath::RandBool() ? 90.0f : -90.0f);
+        RotateLayer(RandomAxis, RandomLayer, RandomAngle);
+    }
+}
+
+void AMagicCubeActor::ResetCube()
+{
+    InstancedMesh->ClearInstances();
+    for (const FTransform& Transform : InitialTransforms)
+    {
+        InstancedMesh->AddInstance(Transform);
+    }
+}
+
+void AMagicCubeActor::InitializeTopParts()
+{
+    for (UStaticMeshComponent* Comp : TopPartComponents)
+    {
+        if (Comp)
+        {
+            Comp->DestroyComponent();
+        }
+    }
+    TopPartComponents.Empty();
+    TopPartInitialTransforms.Empty();
+    
+    int32 ExpectedCount = Dimensions[0] * Dimensions[1];
+    UE_LOG(LogTemp, Warning, TEXT("顶面格子数：%d"), ExpectedCount);
+    
+    int32 MeshCount = TopPartMeshes.Num();
+    if (MeshCount < ExpectedCount)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("TopPartMeshes 配置不足，期望 %d 个，但只有 %d 个将被创建。"), ExpectedCount, MeshCount);
+    }
+    
+    if (bAutoAdjustTopPart)
+    {
+        if (TopPartMeshes.Num() > 0 && TopPartMeshes[0])
+        {
+            FBoxSphereBounds Bounds = TopPartMeshes[0]->GetBounds();
+            FVector Extent = Bounds.BoxExtent * 2.0f;
+            float MaxDimension = FMath::Max3(Extent.X, Extent.Y, Extent.Z);
+            float TargetMax = BlockSize * TopPartSize;
+            float UniformScale = TargetMax / MaxDimension;
+            TopPartScale = FVector(UniformScale);
+            float ScaledHalfHeight = (Extent.Z * UniformScale) * 0.5f;
+            TopPartVerticalOffset = BlockSize * 0.5f + ScaledHalfHeight;
+            UE_LOG(LogTemp, Warning, TEXT("自动调整顶面部件：Scale=%f, VerticalOffset=%f"), UniformScale, TopPartVerticalOffset);
+        }
+    }
+    
+    int32 TopZ = Dimensions[2] - 1;
+    for (int32 y = 0; y < Dimensions[1]; y++)
+    {
+        for (int32 x = 0; x < Dimensions[0]; x++)
+        {
+            int32 Index = x + y * Dimensions[0];
+            FVector BlockPos = CalculatePosition(x, y, TopZ);
+            FVector PartPos = BlockPos + FVector(0, 0, TopPartVerticalOffset);
+            if (Index < TopPartMeshes.Num() && TopPartMeshes[Index])
+            {
+                FString CompName = FString::Printf(TEXT("TopPart_%d"), Index);
+                UStaticMeshComponent* PartComp = NewObject<UStaticMeshComponent>(this, FName(*CompName));
+                if (PartComp)
                 {
-                    UE_LOG(LogTemp, Warning, TEXT("魔方中心世界坐标到屏幕坐标转换失败！"));
-                    return;
+                    PartComp->RegisterComponent();
+                    PartComp->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepRelativeTransform);
+                    PartComp->SetRelativeLocation(PartPos);
+                    PartComp->SetRelativeScale3D(TopPartScale);
+                    PartComp->SetStaticMesh(TopPartMeshes[Index]);
+                    TopPartComponents.Add(PartComp);
+                    TopPartInitialTransforms.Add(PartComp->GetRelativeTransform());
+                    PartComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+                    // PartComp->SetCollisionResponseToAllChannels(ECR_Ignore);
+                    UE_LOG(LogTemp, Warning, TEXT("生成顶面部件 %d 在位置: %s"), Index, *PartPos.ToString());
                 }
+            }
+        }
+    }
+}
 
-                // 遍历目标面集合，计算鼠标位移和各目标面元素的点积
-                for (EMagicCubeFace Face : CachedTargetFaces)
-                {
-                    // 获取面的旋转方向
-                    FVector FaceRotateDirection = CachedMagicCube->GetFaceRotateDirection(Face);
-                    FaceRotateDirection.Normalize(); // 标准化旋转方向
-
-                    // 将旋转方向转换为世界坐标系中的一个点
-                    FVector RotateDirectionWorldSpace = MagicCubeCenter + FaceRotateDirection * 100.0f; // 乘以一个系数，使其远离魔方中心
-
-                    // 将世界坐标转换为屏幕坐标
-                    FVector2D RotateDirectionScreenSpace;
-
-                    // **关键修改：确保使用当前摄像机信息进行投影**
-                    if (UGameplayStatics::ProjectWorldToScreen(PC, RotateDirectionWorldSpace, RotateDirectionScreenSpace, false))
-                    {
-                        // 计算屏幕空间旋转方向向量
-                        FVector2D ScreenSpaceRotateDirectionVector = RotateDirectionScreenSpace - MagicCubeCenterScreenSpace;
-                        ScreenSpaceRotateDirectionVector.Normalize(); // 标准化屏幕空间旋转方向
-
-                        // 计算点积
-                        float DotProduct = FVector2D::DotProduct(MouseMovementVector, ScreenSpaceRotateDirectionVector);
-
-                        // 使用点积的绝对值
-                        float DotProductAbs = FMath::Abs(DotProduct);
-
-                        // 打印当前面的点积绝对值
-                        FString FaceName = StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(Face));
-                        FString DotProductMessage = FString::Printf(TEXT("  面: %s, 点积绝对值: %.2f"), *FaceName, DotProductAbs);
-                        GEngine->AddOnScreenDebugMessage(-1, DeltaTime, FColor::Blue, DotProductMessage);
-                        UE_LOG(LogTemp, Warning, TEXT("%s"), *DotProductMessage);
-
-                        // 更新最大点积绝对值和对应的面
-                        if (DotProductAbs > MaxDotProductAbs)
-                        {
-                            MaxDotProductAbs = DotProductAbs;
-                            RotationFace = Face;
-                        }
-                    }
-                    else
-                    {
-                        UE_LOG(LogTemp, Warning, TEXT("世界坐标到屏幕坐标转换失败！"));
-                    }
-                }
-
-                // 打印旋转面
-                FString RotationFaceName = StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(RotationFace));
-                FString RotationFaceMessage = FString::Printf(TEXT("旋转面: %s, 最大点积绝对值: %.2f"), *RotationFaceName, MaxDotProductAbs);
-                GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Purple, RotationFaceMessage);
-                UE_LOG(LogTemp, Warning, TEXT("%s"), *RotationFaceMessage);
+void AMagicCubeActor::BeginLayerRotation(ECubeAxis Axis, int32 Layer)
+{
+    bIsDraggingRotation = true;
+    CurrentDragAxis = Axis;
+    CurrentDragLayer = Layer;
+    
+    CollectLayerInstances(Axis, Layer, CurrentDragAffectedInstances);
+    
+    CurrentDragBaseTransforms.Empty();
+    for (int32 Index : CurrentDragAffectedInstances)
+    {
+        FTransform T;
+        InstancedMesh->GetInstanceTransform(Index, T, true);
+        CurrentDragBaseTransforms.Add(T);
+    }
+    
+    // 对顶面部件：判断顶层对应的实例索引范围
+    int32 TopLayerStartIndex = Dimensions[0] * Dimensions[1] * (Dimensions[2]-1);
+    CurrentDragTopPartBaseTransforms.Empty();
+    if (TopPartComponents.Num() > 0)
+    {
+        // 对于每个 top part，判断其对应的实例索引是否在受影响集合中
+        for (int32 i = 0; i < TopPartComponents.Num(); i++)
+        {
+            int32 BlockIndex = TopLayerStartIndex + i;
+            if (CurrentDragAffectedInstances.Contains(BlockIndex))
+            {
+                UStaticMeshComponent* Comp = TopPartComponents[i];
+                if (Comp)
+                    CurrentDragTopPartBaseTransforms.Add(Comp->GetRelativeTransform());
+                else
+                    CurrentDragTopPartBaseTransforms.Add(FTransform::Identity);
             }
             else
             {
-                // 打印调试信息（可选，但建议保留）
-                FString Message = FString::Printf(TEXT("鼠标位移: X=%.2f, Y=%.2f, 累计距离: %.2f"), MouseDelta.X, MouseDelta.Y, TotalDragDistance);
-                GEngine->AddOnScreenDebugMessage(-1, DeltaTime, FColor::Yellow, Message);
-
-                // 判断旋转方向并实时旋转
-                if (bThresholdReached)
-                {
-                    // 获取旋转轴
-                    ECubeAxis RotateAxis = CachedMagicCube->GetRotateAxis(RotationFace);
-
-                    // 获取旋转轴的向量形式
-                    FVector RotationAxisVector;
-                    switch (RotateAxis)
-                    {
-                    case ECubeAxis::X:
-                        RotationAxisVector = CachedMagicCube->GetActorRightVector();
-                        break;
-                    case ECubeAxis::Y:
-                        RotationAxisVector = CachedMagicCube->GetActorForwardVector();
-                        break;
-                    case ECubeAxis::Z:
-                        RotationAxisVector = CachedMagicCube->GetActorUpVector();
-                        break;
-                    default:
-                        RotationAxisVector = FVector::UpVector;
-                        break;
-                    }
-
-                    // 获取鼠标位移向量，不再标准化
-                    FVector2D MouseMovementVector = TotalMouseMovement;
-
-                    // 将2D鼠标位移向量转换为3D世界空间向量
-                    FVector WorldSpaceMouseDirection = Camera->GetForwardVector() + Camera->GetRightVector() * MouseMovementVector.X + Camera->GetUpVector() * MouseMovementVector.Y;
-                    WorldSpaceMouseDirection.Normalize();
-
-                    // 计算旋转轴和鼠标位移向量的叉积
-                    FVector CrossProduct = FVector::CrossProduct(RotationAxisVector, WorldSpaceMouseDirection);
-                    CrossProduct.Normalize();
-
-                    // 计算旋转角度（使用点积）
-                    float DotProduct = FVector::DotProduct(RotationAxisVector, WorldSpaceMouseDirection);
-                    float Angle = FMath::Acos(DotProduct);
-
-                    // 旋转角度的符号取决于叉积的方向
-                    float RotationSpeed = 0.1f; //调整旋转速度
-                    float AngleDelta = Angle * RotationSpeed * (CrossProduct | Camera->GetForwardVector()) > 0 ? 1 : -1;
-
-                    // 累加旋转角度
-                    CurrentRotationAngle += AngleDelta * DistanceThisFrame;
-
-                    // 设置图层旋转
-                    int32 LayerIndex = CachedMagicCube->GetLayerIndex(RotationFace);
-                    CachedMagicCube->SetLayerRotation(RotateAxis, LayerIndex, CurrentRotationAngle);
-                }
+                // 如果该 top part不在当前受影响范围中，依然填入一个占位值
+                CurrentDragTopPartBaseTransforms.Add(FTransform::Identity);
             }
         }
     }
 }
 
-//////////////////////////////////////////////////////////////////////////
-// 鼠标左键释放时完成最终旋转吸附，并输出详细调试信息，然后结束拖拽
-//////////////////////////////////////////////////////////////////////////
-void ACustomPawn::OnLeftMouseReleasedCube()
+void AMagicCubeActor::EndLayerRotationDrag()
 {
-    if (bIsDraggingCube && bIsMagicCubeHit && CachedMagicCube)
+    bIsDraggingRotation = false;
+    CurrentDragAffectedInstances.Empty();
+    CurrentDragBaseTransforms.Empty();
+    CurrentDragTopPartBaseTransforms.Empty();
+}
+
+// 根据魔方块坐标计算归属面集合
+TArray<EMagicCubeFace> AMagicCubeActor::GetCubeFacesForBlock(int32 x, int32 y, int32 z) const
+{
+    TArray<EMagicCubeFace> Faces;
+    // Teng：这里AI容易错，UE是左手坐标系，X是食指红色（对准屏幕），Y是中指绿色（对准屏幕右方），Z是大拇指蓝色（对准屏幕上方）
+    if (x == 0) Faces.Add(EMagicCubeFace::Front); // 前面
+    if (x == Dimensions[0] - 1) Faces.Add(EMagicCubeFace::Back); // 后面
+    if (y == 0) Faces.Add(EMagicCubeFace::Left); // 左面
+    if (y == Dimensions[1] - 1) Faces.Add(EMagicCubeFace::Right); // 右面
+    if (z == 0) Faces.Add(EMagicCubeFace::Bottom); // 底部
+    if (z == Dimensions[2] - 1) Faces.Add(EMagicCubeFace::Top); // 顶部
+
+    return Faces;
+}
+
+// 获取面的法向量
+FVector AMagicCubeActor::GetFaceNormal(EMagicCubeFace Face) const
+{
+    // 调用示例：
+    // 获取顶面的法向量
+    // FVector TopNormal = GetFaceNormal(EMagicCubeFace::Top);
+    // UE_LOG(LogTemp, Warning, TEXT("Top Face Normal: %s"), *TopNormal.ToString());
+    // // 获取左面的法向量
+    // FVector LeftNormal = GetFaceNormal(EMagicCubeFace::Left);
+    // UE_LOG(LogTemp, Warning, TEXT("Left Face Normal: %s"), *LeftNormal.ToString());
+
+    // 定义面与法向量的映射
+    // Teng：这里AI容易错，UE是左手坐标系，X是食指红色（对准屏幕），Y是中指绿色（对准屏幕右方），Z是大拇指蓝色（对准屏幕上方）
+    TMap<EMagicCubeFace, FVector> FaceNormals = {
+        {EMagicCubeFace::Top, FVector(0, 0, 1)},
+        {EMagicCubeFace::Bottom, FVector(0, 0, -1)},
+        {EMagicCubeFace::Front, FVector(-1, 0, 0)},
+        {EMagicCubeFace::Back, FVector(1, 0, 0)},
+        {EMagicCubeFace::Left, FVector(0, -1, 0)},
+        {EMagicCubeFace::Right, FVector(0, 1, 0)},
+    };
+
+    // 查找对应面的法向量，如果找不到则返回零向量
+    if (FaceNormals.Contains(Face))
     {
-        FString Message;
-        FColor TextColor;
+        return FaceNormals[Face];
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("No normal defined for face %d"), static_cast<int32>(Face));
+        return FVector::ZeroVector; // 返回零向量表示错误
+    }
+}
 
-        // 根据是否达到阈值设置不同的消息和颜色
-        if (bThresholdReached)
-        {
-            Message = FString::Printf(TEXT("拖拽结束，累计鼠标位移: X=%.2f, Y=%.2f, 累计距离: %.2f"), TotalMouseMovement.X, TotalMouseMovement.Y, TotalDragDistance);
-            TextColor = FColor::Cyan;
+// 获取面"顺时针"旋转的向量
+FVector AMagicCubeActor::GetFaceRotateDirection(EMagicCubeFace Face) const
+{
+    // 调用示例：
+    // 获取顶面的顺时针旋转向量
+    // FVector TopRotationAxis = GetFaceRotateDirection(EMagicCubeFace::Top);
+    // UE_LOG(LogTemp, Warning, TEXT("Top Face Rotation Axis: %s"), *TopRotationAxis.ToString());
+    // 获取左面的顺时针旋转向量
+    // FVector LeftRotationAxis = GetFaceRotateDirection(EMagicCubeFace::Left);
+    // UE_LOG(LogTemp, Warning, TEXT("Left Face Rotation Axis: %s"), *LeftRotationAxis.ToString());
+    
+    // 定义面与顺时针旋转向量的映射
+    // Teng：这里AI容易错，UE是左手坐标系，X是食指红色（对准屏幕），Y是中指绿色（对准屏幕右方），Z是大拇指蓝色（对准屏幕上方）
+    TMap<EMagicCubeFace, FVector> ClockRotateNormals = {
+        {EMagicCubeFace::Top, FVector(0, 1, 0)},
+        {EMagicCubeFace::Bottom, FVector(0, -1, 0)},
+        {EMagicCubeFace::Front, FVector(0, 0, -1)},
+        {EMagicCubeFace::Back, FVector(0, 0, 1)},
+        {EMagicCubeFace::Left, FVector(1, 0, 0)},
+        {EMagicCubeFace::Right, FVector(-1, 0, 0)},
+    };
 
-            // 旋转回弹
-            ECubeAxis RotateAxis = CachedMagicCube->GetRotateAxis(RotationFace);
-            int32 LayerIndex = CachedMagicCube->GetLayerIndex(RotationFace);
+    // 查找对应面的顺时针旋转轴向量，如果找不到则返回零向量
+    if (ClockRotateNormals.Contains(Face))
+    {
+        return ClockRotateNormals[Face];
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("No clockwise rotation axis defined for face %d"), static_cast<int32>(Face));
+        return FVector::ZeroVector; // 返回零向量表示错误
+    }
+}
+// 获取面的反面
+EMagicCubeFace AMagicCubeActor::GetOppositeFace(EMagicCubeFace Face) const
+{
+    // 定义面与反面的映射
+    // Teng：这里AI容易错，UE是左手坐标系，X是食指红色（对准屏幕），Y是中指绿色（对准屏幕右方），Z是大拇指蓝色（对准屏幕上方）
+    TMap<EMagicCubeFace, EMagicCubeFace> FaceAnti = {
+        {EMagicCubeFace::Top, EMagicCubeFace::Bottom},
+        {EMagicCubeFace::Bottom, EMagicCubeFace::Top},
+        {EMagicCubeFace::Front, EMagicCubeFace::Back},
+        {EMagicCubeFace::Back, EMagicCubeFace::Front},
+        {EMagicCubeFace::Left, EMagicCubeFace::Right},
+        {EMagicCubeFace::Right, EMagicCubeFace::Left},
+    };
 
-            // 计算最近的 90 度倍数
-            float NearestRotation = FMath::RoundToFloat(CurrentRotationAngle / 90.0f) * 90.0f;
+    // 查找对应面的反面，如果找不到则返回原面
+    if (FaceAnti.Contains(Face))
+    {
+        return FaceAnti[Face];
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("No opposite face defined for face %d"), static_cast<int32>(Face));
+        return Face; // 返回原面表示错误
+    }
+}
 
-            // 计算回弹角度
-            float SnapAngle = NearestRotation - CurrentRotationAngle;
+// 获取面的旋转轴
+ECubeAxis AMagicCubeActor::GetRotateAxis(EMagicCubeFace Face) const
+{
+    // 定义面与旋转轴的映射
+    TMap<EMagicCubeFace, ECubeAxis> FaceRotateAxis = {
+        {EMagicCubeFace::Top, ECubeAxis::Z},
+        {EMagicCubeFace::Bottom, ECubeAxis::Z},
+        {EMagicCubeFace::Front, ECubeAxis::X},
+        {EMagicCubeFace::Back, ECubeAxis::X},
+        {EMagicCubeFace::Left, ECubeAxis::Y},
+        {EMagicCubeFace::Right, ECubeAxis::Y},
+    };
 
-            // 执行旋转
-            CachedMagicCube->RotateLayer(RotateAxis, LayerIndex, SnapAngle);
-        }
-        else
-        {
-            Message = FString::Printf(TEXT("拖动距离过小不触发魔方旋转交互，累计鼠标位移: X=%.2f, Y=%.2f, 累计距离: %.2f"), TotalMouseMovement.X, TotalMouseMovement.Y, TotalDragDistance);
-            TextColor = FColor::Orange;
+    // 查找对应面的旋转轴，如果找不到则返回X轴
+    if (FaceRotateAxis.Contains(Face))
+    {
+        return FaceRotateAxis[Face];
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("No rotate axis defined for face %d"), static_cast<int32>(Face));
+        return ECubeAxis::X; // 返回X轴表示错误或未定义
+    }
+}
 
-            // 重置图层旋转
-            ECubeAxis RotateAxis = CachedMagicCube->GetRotateAxis(RotationFace);
-            int32 LayerIndex = CachedMagicCube->GetLayerIndex(RotationFace);
-            CachedMagicCube->SetLayerRotation(RotateAxis, LayerIndex, 0.f);
-        }
+// 获取面的层索引
+int32 AMagicCubeActor::GetLayerIndex(EMagicCubeFace Face) const
+{
+    // 定义面与层索引的映射
+    TMap<EMagicCubeFace, int32> FaceLayerIndex = {
+        {EMagicCubeFace::Top, Dimensions[2] - 1},
+        {EMagicCubeFace::Bottom, 0},
+        {EMagicCubeFace::Front, 0},
+        {EMagicCubeFace::Back, Dimensions[0] - 1},
+        {EMagicCubeFace::Left, 0},
+        {EMagicCubeFace::Right, Dimensions[1] - 1},
+    };
 
-        // 打印最终的累计位移和距离
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, TextColor, Message);
-        UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
-
-        // 重置拖拽状态
-        bIsDraggingCube = false;
-        TotalMouseMovement = FVector2D::ZeroVector;
-        TotalDragDistance = 0.f;
-        bThresholdReached = false;
-        bIsMagicCubeHit = false;
-        CachedMagicCube = nullptr;
-        CachedFaces.Empty();
-        CachedTargetFaces.Empty();
-        CurrentRotationAngle = 0.f;
+    // 查找对应面的层索引，如果找不到则返回-1
+    if (FaceLayerIndex.Contains(Face))
+    {
+        return FaceLayerIndex[Face];
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("No layer index defined for face %d"), static_cast<int32>(Face));
+        return -1; // 返回-1表示错误或未定义
     }
 }
