@@ -49,6 +49,8 @@ private:
     FVector2D TotalMouseMovement;
     float TotalDragDistance;
     FVector2D InitialMousePosition; // 记录初始鼠标位置
+    float CurrentRotationAngle; // 当前旋转的角度
+    float LastAngleDeltaSign; // 上一帧旋转角度增量的符号
 
     // 拖动阈值
     float DragThreshold;
@@ -64,6 +66,7 @@ private:
     TArray<EMagicCubeFace> CachedFaces;
 
     // 缓存击中的魔方块目标面集合 (用于计算旋转方向)
+    EMagicCubeFace RotationFace; // 确定旋转的面
     TArray<EMagicCubeFace> CachedTargetFaces;
 
 public:
