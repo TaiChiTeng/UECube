@@ -41,7 +41,7 @@ ACustomPawn::ACustomPawn()
     bIsDraggingCube = false;
     TotalMouseMovement = FVector2D::ZeroVector;
     TotalDragDistance = 0.f;
-    DragThreshold = 20.f; // 设置拖动阈值
+    DragThreshold = 10.f; // 设置拖动阈值
     bThresholdReached = false; // 初始化阈值是否达到标志
     CurrentRotationAngle = 0.f; // 初始化当前旋转角度
 
@@ -335,7 +335,7 @@ void ACustomPawn::Tick(float DeltaTime)
                     FVector2D MouseMovementVector = TotalMouseMovement;
 
                     // 将2D鼠标位移向量转换为3D世界空间向量
-                    FVector WorldSpaceMouseDirection = Camera->GetForwardVector() + Camera->GetRightVector() * MouseMovementVector.X + Camera->GetUpVector() * MouseMovementVector.Y;
+                    FVector WorldSpaceMouseDirection = Camera->GetForwardVector() + Camera->GetRightVector() * MouseMovementVector.X - Camera->GetUpVector() * MouseMovementVector.Y;
                     WorldSpaceMouseDirection.Normalize();
 
                     // 计算旋转轴和鼠标位移向量的叉积
