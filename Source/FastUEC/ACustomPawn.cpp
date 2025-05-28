@@ -314,14 +314,15 @@ void ACustomPawn::Tick(float DeltaTime)
                     ECubeAxis RotateAxis = CachedMagicCube->GetRotateAxis(RotationFace);
 
                     // 获取旋转轴的向量形式
+                    // Teng：这里AI容易错，UE是左手坐标系，X是食指红色（对准屏幕），Y是中指绿色（对准屏幕右方），Z是大拇指蓝色（对准屏幕上方）
                     FVector RotationAxisVector;
                     switch (RotateAxis)
                     {
                     case ECubeAxis::X:
-                        RotationAxisVector = CachedMagicCube->GetActorRightVector();
+                        RotationAxisVector = CachedMagicCube->GetActorForwardVector();
                         break;
                     case ECubeAxis::Y:
-                        RotationAxisVector = CachedMagicCube->GetActorForwardVector();
+                        RotationAxisVector = CachedMagicCube->GetActorRightVector();
                         break;
                     case ECubeAxis::Z:
                         RotationAxisVector = CachedMagicCube->GetActorUpVector();
@@ -335,7 +336,7 @@ void ACustomPawn::Tick(float DeltaTime)
                     FVector2D MouseMovementVector = TotalMouseMovement;
 
                     // 将2D鼠标位移向量转换为3D世界空间向量
-                    FVector WorldSpaceMouseDirection = Camera->GetForwardVector() + Camera->GetRightVector() * MouseMovementVector.X - Camera->GetUpVector() * MouseMovementVector.Y;
+                    FVector WorldSpaceMouseDirection = Camera->GetForwardVector() + Camera->GetRightVector() * MouseMovementVector.X + Camera->GetUpVector() * MouseMovementVector.Y;
                     WorldSpaceMouseDirection.Normalize();
 
                     // 计算旋转轴和鼠标位移向量的叉积
