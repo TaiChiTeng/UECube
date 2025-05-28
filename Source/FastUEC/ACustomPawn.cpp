@@ -204,7 +204,7 @@ void ACustomPawn::Tick(float DeltaTime)
     // 只有在击中魔方且正在拖拽时才执行
     if (bIsMagicCubeHit && bIsDraggingCube)
     {
-        APlayerController* PC = Cast<APlayerController>(GetController()); // 将PC的定义放在这里
+        APlayerController* PC = Cast<APlayerController>(GetController());
         if (PC && CachedMagicCube && Camera)
         {
             // 获取当前鼠标位置
@@ -263,7 +263,6 @@ void ACustomPawn::Tick(float DeltaTime)
                     // 将世界坐标转换为屏幕坐标
                     FVector2D RotateDirectionScreenSpace;
 
-                    // **关键修改：确保使用当前摄像机信息进行投影**
                     if (UGameplayStatics::ProjectWorldToScreen(PC, RotateDirectionWorldSpace, RotateDirectionScreenSpace, false))
                     {
                         // 计算屏幕空间旋转方向向量
@@ -301,63 +300,60 @@ void ACustomPawn::Tick(float DeltaTime)
                 GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Purple, RotationFaceMessage);
                 UE_LOG(LogTemp, Warning, TEXT("%s"), *RotationFaceMessage);
             }
-            else
+            // 达到阈值后处理旋转
+            else if (bThresholdReached)
             {
-                // 打印调试信息（可选，但建议保留）
-                FString Message = FString::Printf(TEXT("鼠标位移: X=%.2f, Y=%.2f, 累计距离: %.2f"), MouseDelta.X, MouseDelta.Y, TotalDragDistance);
-                GEngine->AddOnScreenDebugMessage(-1, DeltaTime, FColor::Yellow, Message);
+                // 获取旋转轴
+                ECubeAxis RotateAxis = CachedMagicCube->GetRotateAxis(RotationFace);
 
-                // 判断旋转方向并实时旋转
-                if (bThresholdReached)
+                // 获取旋转轴的向量形式
+                FVector RotationAxisVector;
+                switch (RotateAxis)
                 {
-                    // 获取旋转轴
-                    ECubeAxis RotateAxis = CachedMagicCube->GetRotateAxis(RotationFace);
-
-                    // 获取旋转轴的向量形式
-                    // Teng：这里AI容易错，UE是左手坐标系，X是食指红色（对准屏幕），Y是中指绿色（对准屏幕右方），Z是大拇指蓝色（对准屏幕上方）
-                    FVector RotationAxisVector;
-                    switch (RotateAxis)
-                    {
-                    case ECubeAxis::X:
-                        RotationAxisVector = CachedMagicCube->GetActorForwardVector();
-                        break;
-                    case ECubeAxis::Y:
-                        RotationAxisVector = CachedMagicCube->GetActorRightVector();
-                        break;
-                    case ECubeAxis::Z:
-                        RotationAxisVector = CachedMagicCube->GetActorUpVector();
-                        break;
-                    default:
-                        RotationAxisVector = FVector::UpVector;
-                        break;
-                    }
-
-                    // 获取鼠标位移向量，不再标准化
-                    FVector2D MouseMovementVector = TotalMouseMovement;
-
-                    // 将2D鼠标位移向量转换为3D世界空间向量
-                    FVector WorldSpaceMouseDirection = Camera->GetForwardVector() + Camera->GetRightVector() * MouseMovementVector.X - Camera->GetUpVector() * MouseMovementVector.Y;
-                    WorldSpaceMouseDirection.Normalize();
-
-                    // 计算旋转轴和鼠标位移向量的叉积
-                    FVector CrossProduct = FVector::CrossProduct(RotationAxisVector, WorldSpaceMouseDirection);
-                    CrossProduct.Normalize();
-
-                    // 计算旋转角度（使用点积）
-                    float DotProduct = FVector::DotProduct(RotationAxisVector, WorldSpaceMouseDirection);
-                    float Angle = FMath::Acos(DotProduct);
-
-                    // 旋转角度的符号取决于叉积的方向
-                    float RotationSpeed = 0.1f; //调整旋转速度
-                    float AngleDelta = Angle * RotationSpeed * (CrossProduct | Camera->GetForwardVector()) > 0 ? 1 : -1;
-
-                    // 累加旋转角度
-                    CurrentRotationAngle += AngleDelta * DistanceThisFrame;
-
-                    // 设置图层旋转
-                    int32 LayerIndex = CachedMagicCube->GetLayerIndex(RotationFace);
-                    CachedMagicCube->SetLayerRotation(RotateAxis, LayerIndex, CurrentRotationAngle);
+                case ECubeAxis::X:
+                    RotationAxisVector = CachedMagicCube->GetActorForwardVector();
+                    break;
+                case ECubeAxis::Y:
+                    RotationAxisVector = CachedMagicCube->GetActorRightVector();
+                    break;
+                case ECubeAxis::Z:
+                    RotationAxisVector = CachedMagicCube->GetActorUpVector();
+                    break;
+                default:
+                    RotationAxisVector = FVector::UpVector;
+                    break;
                 }
+
+                // 将2D鼠标位移向量转换为3D世界空间向量
+                FVector WorldSpaceMouseDirection = Camera->GetForwardVector() + 
+                                                 Camera->GetRightVector() * MouseDelta.X - 
+                                                 Camera->GetUpVector() * MouseDelta.Y;
+                WorldSpaceMouseDirection.Normalize();
+
+                // 计算旋转轴和鼠标位移向量的叉积
+                FVector CrossProduct = FVector::CrossProduct(RotationAxisVector, WorldSpaceMouseDirection);
+                CrossProduct.Normalize();
+
+                // 计算旋转角度增量（直接使用鼠标位移量）
+                float RotationSpeed = 0.5f; // 调整旋转速度
+                float AngleDelta = MouseDelta.Size() * RotationSpeed;
+
+                // 旋转角度的符号取决于叉积的方向
+                AngleDelta *= (CrossProduct | Camera->GetForwardVector()) > 0 ? 1 : -1;
+
+                // 累加当前旋转角度
+                CurrentRotationAngle += AngleDelta;
+
+                // 设置图层旋转
+                int32 LayerIndex = CachedMagicCube->GetLayerIndex(RotationFace);
+                CachedMagicCube->SetLayerRotation(RotateAxis, LayerIndex, CurrentRotationAngle);
+
+                // 打印实时旋转信息
+                FString RotateInfo = FString::Printf(TEXT("实时旋转 - 轴: %d, 层: %d, 角度: %.2f"), 
+                                                   static_cast<int32>(RotateAxis), 
+                                                   LayerIndex, 
+                                                   CurrentRotationAngle);
+                GEngine->AddOnScreenDebugMessage(-1, DeltaTime, FColor::Emerald, RotateInfo);
             }
         }
     }
