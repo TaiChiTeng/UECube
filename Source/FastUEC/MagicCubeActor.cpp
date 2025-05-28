@@ -192,49 +192,79 @@ void AMagicCubeActor::SetLayerRotation(ECubeAxis Axis, int32 Layer, float Angle)
     {
         BeginLayerRotation(Axis, Layer);
     }
-    
+
+    // 1. 计算旋转轴（与RotateLayer一致）
     FVector RotationAxis;
     switch (Axis)
     {
         case ECubeAxis::X: RotationAxis = FVector::ForwardVector; break;
-        case ECubeAxis::Y: RotationAxis = FVector::RightVector; break;
-        case ECubeAxis::Z: RotationAxis = FVector::UpVector; break;
-        default: RotationAxis = FVector::ZeroVector; break;
+        case ECubeAxis::Y: RotationAxis = FVector::RightVector;   break;
+        case ECubeAxis::Z: RotationAxis = FVector::UpVector;      break;
+        default:           RotationAxis = FVector::ZeroVector;    break;
     }
-    
     FQuat RotQuat(RotationAxis, FMath::DegreesToRadians(Angle));
-    
-    // 对于拖拽过程中受影响的实例，使用 BeginLayerRotation 中保存的基准变换进行旋转
+
+    // 2. 计算世界空间中的枢轴点（与RotateLayer一致）
+    FVector Pivot = FVector::ZeroVector;
+    for (const FTransform& BaseTransform : CurrentDragBaseTransforms)
+    {
+        Pivot += BaseTransform.GetLocation();
+    }
+    Pivot /= CurrentDragBaseTransforms.Num();
+
+    // 3. 应用旋转到实例（世界空间计算）
     for (int32 i = 0; i < CurrentDragAffectedInstances.Num(); i++)
     {
         int32 idx = CurrentDragAffectedInstances[i];
         if (CurrentDragBaseTransforms.IsValidIndex(i))
         {
-            FTransform NewTransform = CurrentDragBaseTransforms[i];
-            NewTransform.SetLocation(RotQuat.RotateVector(NewTransform.GetLocation()));
-            NewTransform.SetRotation(RotQuat * NewTransform.GetRotation());
+            FTransform BaseTransform = CurrentDragBaseTransforms[i];
+            FVector LocalOffset = BaseTransform.GetLocation() - Pivot;
+            FVector NewWorldPos = Pivot + RotQuat.RotateVector(LocalOffset);
+            FQuat NewWorldRot = RotQuat * BaseTransform.GetRotation();
+
+            FTransform NewTransform;
+            NewTransform.SetLocation(NewWorldPos);
+            NewTransform.SetRotation(NewWorldRot);
+            NewTransform.SetScale3D(BaseTransform.GetScale3D());
+
             InstancedMesh->UpdateInstanceTransform(idx, NewTransform, true);
         }
     }
-    
-    // 同步更新顶面部件：不再仅限于 Z 轴旋转，
-    // 对于每个顶面部件，其对应的实例索引为：TopLayerStartIndex + i
+
+    // 4. 同步更新顶面部件（关键修正部分）
     int32 TopLayerStartIndex = Dimensions[0] * Dimensions[1] * (Dimensions[2]-1);
-    if (TopPartComponents.Num() > 0 && CurrentDragTopPartBaseTransforms.Num() == TopPartComponents.Num())
+    for (int32 i = 0; i < TopPartComponents.Num(); i++)
     {
-        for (int32 i = 0; i < TopPartComponents.Num(); i++)
+        int32 BlockIndex = TopLayerStartIndex + i;
+        if (CurrentDragAffectedInstances.Contains(BlockIndex) && 
+            CurrentDragTopPartBaseTransforms.IsValidIndex(i))
         {
-            int32 BlockIndex = TopLayerStartIndex + i;
-            if (CurrentDragAffectedInstances.Contains(BlockIndex))
+            UStaticMeshComponent* Comp = TopPartComponents[i];
+            if (Comp)
             {
-                FTransform NewTransform = CurrentDragTopPartBaseTransforms[i];
-                NewTransform.SetLocation(RotQuat.RotateVector(NewTransform.GetLocation()));
-                NewTransform.SetRotation(RotQuat * NewTransform.GetRotation());
-                TopPartComponents[i]->SetRelativeTransform(NewTransform);
+                // 获取顶面部件的世界空间初始位置（相对于RootComponent）
+                FTransform InitialWorldTransform = CurrentDragTopPartBaseTransforms[i] * RootComponent->GetComponentTransform();
+                
+                // 计算相对于枢轴点的偏移
+                FVector LocalOffset = InitialWorldTransform.GetLocation() - Pivot;
+                
+                // 应用旋转
+                FVector NewWorldPos = Pivot + RotQuat.RotateVector(LocalOffset);
+                FQuat NewWorldRot = RotQuat * InitialWorldTransform.GetRotation();
+                
+                // 转换回相对RootComponent的变换
+                FTransform NewWorldTransform;
+                NewWorldTransform.SetLocation(NewWorldPos);
+                NewWorldTransform.SetRotation(NewWorldRot);
+                NewWorldTransform.SetScale3D(InitialWorldTransform.GetScale3D());
+                
+                FTransform NewRelativeTransform = NewWorldTransform.GetRelativeTransform(RootComponent->GetComponentTransform());
+                Comp->SetRelativeTransform(NewRelativeTransform);
             }
         }
     }
-    
+
     InstancedMesh->MarkRenderStateDirty();
 }
 
@@ -458,21 +488,15 @@ void AMagicCubeActor::BeginLayerRotation(ECubeAxis Axis, int32 Layer)
     CurrentDragTopPartBaseTransforms.Empty();
     if (TopPartComponents.Num() > 0)
     {
-        // 对于每个 top part，判断其对应的实例索引是否在受影响集合中
         for (int32 i = 0; i < TopPartComponents.Num(); i++)
         {
-            int32 BlockIndex = TopLayerStartIndex + i;
-            if (CurrentDragAffectedInstances.Contains(BlockIndex))
+            if (TopPartComponents[i])
             {
-                UStaticMeshComponent* Comp = TopPartComponents[i];
-                if (Comp)
-                    CurrentDragTopPartBaseTransforms.Add(Comp->GetRelativeTransform());
-                else
-                    CurrentDragTopPartBaseTransforms.Add(FTransform::Identity);
+                // 保存相对变换
+                CurrentDragTopPartBaseTransforms.Add(TopPartComponents[i]->GetRelativeTransform());
             }
             else
             {
-                // 如果该 top part不在当前受影响范围中，依然填入一个占位值
                 CurrentDragTopPartBaseTransforms.Add(FTransform::Identity);
             }
         }
