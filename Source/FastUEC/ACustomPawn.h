@@ -43,13 +43,12 @@ private:
     void OnLeftMousePressedCube();
     void OnLeftMouseReleasedCube();
 
-    // 触摸交互
-    void OnTouchPressed(ETouchIndex::Type FingerIndex, FVector Location);
-    void OnTouchReleased(ETouchIndex::Type FingerIndex, FVector Location);
+    // 触摸开始事件
+    void OnTouchStarted(ETouchIndex::Type FingerIndex, FVector Location);
+    // 触摸结束事件
+    void OnTouchEnded(ETouchIndex::Type FingerIndex, FVector Location);
+    // 触摸移动事件
     void OnTouchMoved(ETouchIndex::Type FingerIndex, FVector Location);
-
-    void HandleSingleFingerTouch(FVector2D TouchDelta);
-    void HandleDoubleFingerTouch(FVector2D Finger1Delta, FVector2D Finger2Delta);
 
 private:
     // 鼠标拖拽状态
@@ -76,10 +75,11 @@ private:
     EMagicCubeFace RotationFace; // 确定旋转的面
     TArray<EMagicCubeFace> CachedTargetFaces;
 
-    // 触摸交互状态
-    TMap<ETouchIndex::Type, FVector2D> TouchPositions;
-    bool bIsUsingSingleTouch;
-    bool bIsUsingDoubleTouch;
+    // 触摸状态
+    bool bIsTouching;
+    FVector2D InitialTouchPosition;
+    bool bIsTwoFingerTouching; // 是否双指触碰
+    FVector2D InitialSecondTouchPosition; // 第二个触摸点初始位置
 
 public:
     // 摄像机相关

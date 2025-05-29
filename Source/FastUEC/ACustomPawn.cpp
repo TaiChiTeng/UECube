@@ -41,11 +41,15 @@ ACustomPawn::ACustomPawn()
     bIsDraggingCube = false;
     TotalMouseMovement = FVector2D::ZeroVector;
     TotalDragDistance = 0.f;
-    DragThreshold = 18.f; // 设置拖动阈值
+    DragThreshold = 15.f; // 设置拖动阈值
     bThresholdReached = false; // 初始化阈值是否达到标志
     CurrentRotationAngle = 0.f; // 初始化当前旋转角度
 
     bIsMagicCubeHit = false; // 初始化是否击中魔方
+
+    // 初始化触摸状态
+    bIsTouching = false;
+    bIsTwoFingerTouching = false;
 }
 
 void ACustomPawn::BeginPlay()
@@ -73,8 +77,9 @@ void ACustomPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
     PlayerInputComponent->BindAxis("Turn", this, &ACustomPawn::Turn);
     PlayerInputComponent->BindAxis("LookUp", this, &ACustomPawn::LookUp);
 
-    PlayerInputComponent->BindTouch(IE_Pressed, this, &ACustomPawn::OnTouchPressed);
-    PlayerInputComponent->BindTouch(IE_Released, this, &ACustomPawn::OnTouchReleased);
+    // 触摸事件绑定
+    PlayerInputComponent->BindTouch(IE_Pressed, this, &ACustomPawn::OnTouchStarted);
+    PlayerInputComponent->BindTouch(IE_Released, this, &ACustomPawn::OnTouchEnded);
     PlayerInputComponent->BindTouch(IE_Repeat, this, &ACustomPawn::OnTouchMoved);
 }
 
@@ -108,6 +113,9 @@ void ACustomPawn::LookUp(float AxisValue)
 // 当鼠标左键按下时：记录屏幕坐标、射线检测选中魔方块，构造候选面集合，并利用 HitNormal 计算射线碰撞平面
 void ACustomPawn::OnLeftMousePressedCube()
 {
+    // 如果已经触摸，则不响应鼠标事件
+    if (bIsTouching) return;
+    
     if (APlayerController* PC = Cast<APlayerController>(GetController()))
     {
         // 初始化鼠标拖拽状态
@@ -206,16 +214,24 @@ void ACustomPawn::Tick(float DeltaTime)
     Super::Tick(DeltaTime);
 
     // 只有在击中魔方且正在拖拽时才执行
-    if (bIsMagicCubeHit && bIsDraggingCube)
+    if (bIsMagicCubeHit && (bIsDraggingCube || bIsTouching))
     {
         APlayerController* PC = Cast<APlayerController>(GetController());
         if (PC && CachedMagicCube && Camera)
         {
-            // 获取当前鼠标位置
+            // 获取当前鼠标或触摸位置
             float CurrentMouseX, CurrentMouseY;
-            PC->GetMousePosition(CurrentMouseX, CurrentMouseY);
+            if (bIsDraggingCube)
+            {
+                PC->GetMousePosition(CurrentMouseX, CurrentMouseY);
+            }
+            else
+            {
+                CurrentMouseX = InitialTouchPosition.X;
+                CurrentMouseY = InitialTouchPosition.Y;
+            }
 
-            // 计算鼠标位移
+            // 计算鼠标或触摸位移
             FVector2D MouseDelta = FVector2D(CurrentMouseX, CurrentMouseY) - InitialMousePosition;
 
             // 累加位移
@@ -225,14 +241,14 @@ void ACustomPawn::Tick(float DeltaTime)
             float DistanceThisFrame = MouseDelta.Size();
             TotalDragDistance += DistanceThisFrame;
 
-            // 更新初始鼠标位置
+            // 更新初始鼠标或触摸位置
             InitialMousePosition = FVector2D(CurrentMouseX, CurrentMouseY);
 
             // 检查是否达到阈值
             if (!bThresholdReached && TotalDragDistance >= DragThreshold)
             {
                 bThresholdReached = true;
-                FString Message = FString::Printf(TEXT("鼠标拖动已经达到检测阈值"));
+                FString Message = FString::Printf(TEXT("鼠标或触摸拖动已经达到检测阈值"));
                 GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, Message);
                 UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
 
@@ -368,6 +384,9 @@ void ACustomPawn::Tick(float DeltaTime)
 //////////////////////////////////////////////////////////////////////////
 void ACustomPawn::OnLeftMouseReleasedCube()
 {
+    // 如果已经触摸，则不响应鼠标事件
+    if (bIsTouching) return;
+    
     if (bIsDraggingCube && bIsMagicCubeHit && CachedMagicCube)
     {
         FString Message;
@@ -420,67 +439,199 @@ void ACustomPawn::OnLeftMouseReleasedCube()
     }
 }
 
-void ACustomPawn::OnTouchPressed(ETouchIndex::Type FingerIndex, FVector Location)
+//////////////////////////////////////////////////////////////////////////
+// 触摸事件处理
+//////////////////////////////////////////////////////////////////////////
+void ACustomPawn::OnTouchStarted(ETouchIndex::Type FingerIndex, FVector Location)
 {
-    FVector2D TouchPosition(Location.X, Location.Y);
-    TouchPositions.Add(FingerIndex, TouchPosition);
+    // 如果当前没有触摸，则记录初始触摸位置并开始触摸
+    if (!bIsTouching)
+    {
+        bIsTouching = true;
+        InitialTouchPosition = FVector2D(Location.X, Location.Y);
+        TotalMouseMovement = FVector2D::ZeroVector;
+        TotalDragDistance = 0.f;
+        bThresholdReached = false;
+        CurrentRotationAngle = 0.f;
 
-    if (TouchPositions.Num() == 1)
-    {
-        bIsUsingSingleTouch = true;
+        // 获取玩家控制器
+        APlayerController* PC = Cast<APlayerController>(GetController());
+        if (PC)
+        {
+            // 执行射线检测
+            FHitResult HitResult;
+            bool bHit = PC->GetHitResultUnderCursorByChannel(
+                UEngineTypes::ConvertToTraceType(ECC_Visibility),
+                true,
+                HitResult
+            );
+
+            bIsMagicCubeHit = false;
+
+            if (bHit && HitResult.GetActor())
+            {
+                // 尝试获取魔方Actor
+                CachedMagicCube = Cast<AMagicCubeActor>(HitResult.GetActor());
+                if (CachedMagicCube)
+                {
+                    bIsMagicCubeHit = true;
+
+                    // 计算点击到的块索引
+                    const FVector LocalPosition = CachedMagicCube->GetActorTransform().InverseTransformPosition(HitResult.ImpactPoint);
+                    const int32 x = FMath::RoundToInt((LocalPosition.X + (CachedMagicCube->Dimensions[0] - 1) * 0.5f * CachedMagicCube->BlockSize) / CachedMagicCube->BlockSize);
+                    const int32 y = FMath::RoundToInt((LocalPosition.Y + (CachedMagicCube->Dimensions[1] - 1) * 0.5f * CachedMagicCube->BlockSize) / CachedMagicCube->BlockSize);
+                    const int32 z = FMath::RoundToInt((LocalPosition.Z + (CachedMagicCube->Dimensions[2] - 1) * 0.5f * CachedMagicCube->BlockSize) / CachedMagicCube->BlockSize);
+
+                    const int32 BlockIndex = CachedMagicCube->GetLinearIndex(x, y, z);
+
+                    // 获取归属面集合
+                    CachedFaces = CachedMagicCube->GetCubeFacesForBlock(x, y, z);
+
+                    // 找到射线击中面
+                    EMagicCubeFace HitFace = EMagicCubeFace::Top; // 默认值
+                    float MaxDot = -1.0f;
+                    for (EMagicCubeFace Face : CachedFaces) // 遍历归属面集合
+                    {
+                        FVector FaceNormal = CachedMagicCube->GetFaceNormal(Face);
+                        float DotProduct = FVector::DotProduct(FaceNormal, HitResult.ImpactNormal);
+                        if (DotProduct > MaxDot)
+                        {
+                            MaxDot = DotProduct;
+                            HitFace = Face;
+                        }
+                    }
+
+                    // 找到射线击中面的反面
+                    EMagicCubeFace OppositeFace = CachedMagicCube->GetOppositeFace(HitFace);
+
+                    // 计算目标面集合
+                    CachedTargetFaces = CachedFaces;
+                    CachedTargetFaces.Remove(HitFace);
+                    CachedTargetFaces.Remove(OppositeFace);
+
+                    // 构造归属面集合字符串
+                    FString FaceNames;
+                    for (EMagicCubeFace Face : CachedFaces)
+                    {
+                        FaceNames += StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(Face)) + TEXT(" ");
+                    }
+
+                    // 构造目标面集合字符串
+                    FString TargetFaceNames;
+                    for (EMagicCubeFace Face : CachedTargetFaces)
+                    {
+                        TargetFaceNames += StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(Face)) + TEXT(" ");
+                    }
+
+                    // 打印信息
+                    FString Message = FString::Printf(TEXT("触摸开始，点击到魔方块，所属魔方Actor: %s，块索引: %d，归属面集合: %s\n射线击中面: %s\n射线击中面的反面: %s\n目标面集合: %s"),
+                        *CachedMagicCube->GetName(), BlockIndex, *FaceNames,
+                        *StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(HitFace)),
+                        *StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(OppositeFace)),
+                        *TargetFaceNames);
+                    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, Message);
+                    UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
+                }
+            }
+        }
     }
-    else if (TouchPositions.Num() == 2)
+    // 如果已经有一个触摸点，并且当前是第一次检测到第二个触摸点
+    else if (bIsTouching && !bIsTwoFingerTouching)
     {
-        bIsUsingDoubleTouch = true;
-        bIsUsingSingleTouch = false;
+        bIsTwoFingerTouching = true;
+        InitialSecondTouchPosition = FVector2D(Location.X, Location.Y);
+        bCameraIsRotating = true; // 启动摄像机旋转模式
     }
 }
 
-void ACustomPawn::OnTouchReleased(ETouchIndex::Type FingerIndex, FVector Location)
+void ACustomPawn::OnTouchEnded(ETouchIndex::Type FingerIndex, FVector Location)
 {
-    TouchPositions.Remove(FingerIndex);
-
-    if (TouchPositions.Num() == 1)
+    // 如果是双指触碰结束
+    if (bIsTwoFingerTouching)
     {
-        bIsUsingSingleTouch = true;
-        bIsUsingDoubleTouch = false;
+        bIsTwoFingerTouching = false;
+        bCameraIsRotating = false; // 结束摄像机旋转模式
     }
-    else if (TouchPositions.Num() == 0)
+    // 如果是单指触碰结束
+    else if (bIsTouching)
     {
-        bIsUsingSingleTouch = false;
-        bIsUsingDoubleTouch = false;
+        bIsTouching = false;
+
+        if (bIsMagicCubeHit && CachedMagicCube)
+        {
+            FString Message;
+            FColor TextColor;
+
+            // 根据是否达到阈值设置不同的消息和颜色
+            if (bThresholdReached)
+            {
+                Message = FString::Printf(TEXT("触摸结束，累计触摸位移: X=%.2f, Y=%.2f, 累计距离: %.2f"), TotalMouseMovement.X, TotalMouseMovement.Y, TotalDragDistance);
+                TextColor = FColor::Cyan;
+
+                // 旋转回弹
+                ECubeAxis RotateAxis = CachedMagicCube->GetRotateAxis(RotationFace);
+                int32 LayerIndex = CachedMagicCube->GetLayerIndex(RotationFace);
+
+                // 计算最近的 90 度倍数
+                float NearestRotation = FMath::RoundToFloat(CurrentRotationAngle / 90.0f) * 90.0f;
+
+                // 计算回弹角度
+                float SnapAngle = NearestRotation - CurrentRotationAngle;
+
+                // 执行旋转
+                CachedMagicCube->RotateLayer(RotateAxis, LayerIndex, SnapAngle);
+            }
+            else
+            {
+                Message = FString::Printf(TEXT("触摸距离过小不触发魔方旋转交互，累计触摸位移: X=%.2f, Y=%.2f, 累计距离: %.2f"), TotalMouseMovement.X, TotalMouseMovement.Y, TotalDragDistance);
+                TextColor = FColor::Orange;
+
+                // 重置图层旋转
+                ECubeAxis RotateAxis = CachedMagicCube->GetRotateAxis(RotationFace);
+                int32 LayerIndex = CachedMagicCube->GetLayerIndex(RotationFace);
+                CachedMagicCube->SetLayerRotation(RotateAxis, LayerIndex, 0.f);
+            }
+
+            // 打印最终的累计位移和距离
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, TextColor, Message);
+            UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
+        }
+
+        // 重置触摸状态
+        TotalMouseMovement = FVector2D::ZeroVector;
+        TotalDragDistance = 0.f;
+        bThresholdReached = false;
+        bIsMagicCubeHit = false;
+        CachedMagicCube = nullptr;
+        CachedFaces.Empty();
+        CachedTargetFaces.Empty();
+        CurrentRotationAngle = 0.f;
     }
 }
 
 void ACustomPawn::OnTouchMoved(ETouchIndex::Type FingerIndex, FVector Location)
 {
-    FVector2D CurrentPosition(Location.X, Location.Y);
-
-    if (TouchPositions.Contains(FingerIndex))
+    // 如果是双指触碰，则进行摄像机旋转
+    if (bIsTwoFingerTouching)
     {
-        FVector2D PreviousPosition = TouchPositions[FingerIndex];
-        FVector2D Delta = CurrentPosition - PreviousPosition;
-        TouchPositions[FingerIndex] = CurrentPosition;
+        // 计算两个触摸点之间的距离
+        float CurrentDistance = FVector2D::Distance(InitialTouchPosition, InitialSecondTouchPosition);
+        float NewDistance = FVector2D::Distance(FVector2D(Location.X, Location.Y), InitialSecondTouchPosition);
 
-        if (bIsUsingSingleTouch && FingerIndex == ETouchIndex::Touch1)
-        {
-            HandleSingleFingerTouch(Delta);
-        }
-        else if (bIsUsingDoubleTouch && TouchPositions.Num() == 2)
-        {
-            FVector2D Finger1Delta = TouchPositions[ETouchIndex::Touch1] - PreviousPosition;
-            FVector2D Finger2Delta = TouchPositions[ETouchIndex::Touch2] - PreviousPosition;
-            HandleDoubleFingerTouch(Finger1Delta, Finger2Delta);
-        }
+        // 计算缩放因子
+        float ScaleFactor = NewDistance / CurrentDistance;
+
+        // 调整摄像机臂长
+        SpringArm->TargetArmLength *= ScaleFactor;
+
+        // 更新初始触摸位置
+        InitialTouchPosition = FVector2D(Location.X, Location.Y);
+        InitialSecondTouchPosition = FVector2D(Location.X, Location.Y);
     }
-}
-
-void ACustomPawn::HandleSingleFingerTouch(FVector2D TouchDelta)
-{
-
-}
-
-void ACustomPawn::HandleDoubleFingerTouch(FVector2D Finger1Delta, FVector2D Finger2Delta)
-{
-
+    // 如果是单指触碰，则进行魔方旋转
+    else if (bIsTouching)
+    {
+        // 更新初始触摸位置
+        InitialTouchPosition = FVector2D(Location.X, Location.Y);
+    }
 }
