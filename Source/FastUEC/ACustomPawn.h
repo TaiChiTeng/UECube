@@ -43,6 +43,14 @@ private:
     void OnLeftMousePressedCube();
     void OnLeftMouseReleasedCube();
 
+    // 触摸交互
+    void OnTouchPressed(ETouchIndex::Type FingerIndex, FVector Location);
+    void OnTouchReleased(ETouchIndex::Type FingerIndex, FVector Location);
+    void OnTouchMoved(ETouchIndex::Type FingerIndex, FVector Location);
+
+    void HandleSingleFingerTouch(FVector2D TouchDelta);
+    void HandleDoubleFingerTouch(FVector2D Finger1Delta, FVector2D Finger2Delta);
+
 private:
     // 鼠标拖拽状态
     bool bIsDraggingCube;
@@ -67,6 +75,11 @@ private:
     // 缓存击中的魔方块目标面集合 (用于计算旋转方向)
     EMagicCubeFace RotationFace; // 确定旋转的面
     TArray<EMagicCubeFace> CachedTargetFaces;
+
+    // 触摸交互状态
+    TMap<ETouchIndex::Type, FVector2D> TouchPositions;
+    bool bIsUsingSingleTouch;
+    bool bIsUsingDoubleTouch;
 
 public:
     // 摄像机相关

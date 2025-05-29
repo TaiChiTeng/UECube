@@ -72,6 +72,10 @@ void ACustomPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
     PlayerInputComponent->BindAxis("Turn", this, &ACustomPawn::Turn);
     PlayerInputComponent->BindAxis("LookUp", this, &ACustomPawn::LookUp);
+
+    PlayerInputComponent->BindTouch(IE_Pressed, this, &ACustomPawn::OnTouchPressed);
+    PlayerInputComponent->BindTouch(IE_Released, this, &ACustomPawn::OnTouchReleased);
+    PlayerInputComponent->BindTouch(IE_Repeat, this, &ACustomPawn::OnTouchMoved);
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -414,4 +418,69 @@ void ACustomPawn::OnLeftMouseReleasedCube()
         CachedTargetFaces.Empty();
         CurrentRotationAngle = 0.f;
     }
+}
+
+void ACustomPawn::OnTouchPressed(ETouchIndex::Type FingerIndex, FVector Location)
+{
+    FVector2D TouchPosition(Location.X, Location.Y);
+    TouchPositions.Add(FingerIndex, TouchPosition);
+
+    if (TouchPositions.Num() == 1)
+    {
+        bIsUsingSingleTouch = true;
+    }
+    else if (TouchPositions.Num() == 2)
+    {
+        bIsUsingDoubleTouch = true;
+        bIsUsingSingleTouch = false;
+    }
+}
+
+void ACustomPawn::OnTouchReleased(ETouchIndex::Type FingerIndex, FVector Location)
+{
+    TouchPositions.Remove(FingerIndex);
+
+    if (TouchPositions.Num() == 1)
+    {
+        bIsUsingSingleTouch = true;
+        bIsUsingDoubleTouch = false;
+    }
+    else if (TouchPositions.Num() == 0)
+    {
+        bIsUsingSingleTouch = false;
+        bIsUsingDoubleTouch = false;
+    }
+}
+
+void ACustomPawn::OnTouchMoved(ETouchIndex::Type FingerIndex, FVector Location)
+{
+    FVector2D CurrentPosition(Location.X, Location.Y);
+
+    if (TouchPositions.Contains(FingerIndex))
+    {
+        FVector2D PreviousPosition = TouchPositions[FingerIndex];
+        FVector2D Delta = CurrentPosition - PreviousPosition;
+        TouchPositions[FingerIndex] = CurrentPosition;
+
+        if (bIsUsingSingleTouch && FingerIndex == ETouchIndex::Touch1)
+        {
+            HandleSingleFingerTouch(Delta);
+        }
+        else if (bIsUsingDoubleTouch && TouchPositions.Num() == 2)
+        {
+            FVector2D Finger1Delta = TouchPositions[ETouchIndex::Touch1] - PreviousPosition;
+            FVector2D Finger2Delta = TouchPositions[ETouchIndex::Touch2] - PreviousPosition;
+            HandleDoubleFingerTouch(Finger1Delta, Finger2Delta);
+        }
+    }
+}
+
+void ACustomPawn::HandleSingleFingerTouch(FVector2D TouchDelta)
+{
+
+}
+
+void ACustomPawn::HandleDoubleFingerTouch(FVector2D Finger1Delta, FVector2D Finger2Delta)
+{
+
 }
