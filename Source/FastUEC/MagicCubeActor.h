@@ -6,6 +6,7 @@
 #include "MagicCubeActor.generated.h" // 确保正确保留
 
 // Teng：定义魔方的面类型，ECubeFace会编译失败，可能UE已经用了
+// http://www.rubik.com.cn/notation.htm
 UENUM(BlueprintType)
 enum class EMagicCubeFace : uint8
 {
@@ -14,7 +15,10 @@ enum class EMagicCubeFace : uint8
     Front,  // 前面
     Back,   // 后面
     Left,   // 左面
-    Right   // 右面
+    Right,   // 右面
+    Equatorial,  // 赤道层是魔方的中间层，通常指的是在魔方的水平中间部分，用于Layer=3，记作：非顶非底面
+    Middle,  // 左右之间的中层，用于Layer=3，记作：非左非右面
+    Standing   // 前后之间的中间层，用于Layer=3，记作：非前非后面
 };
 
 UENUM(BlueprintType)

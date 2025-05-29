@@ -518,10 +518,13 @@ TArray<EMagicCubeFace> AMagicCubeActor::GetCubeFacesForBlock(int32 x, int32 y, i
     // Teng：这里AI容易错，UE是左手坐标系，X是食指红色（对准屏幕），Y是中指绿色（对准屏幕右方），Z是大拇指蓝色（对准屏幕上方）
     if (x == 0) Faces.Add(EMagicCubeFace::Front); // 前面
     if (x == Dimensions[0] - 1) Faces.Add(EMagicCubeFace::Back); // 后面
+    if (x != 0 && x != Dimensions[0] - 1) Faces.Add(EMagicCubeFace::Standing); // 非前非后面
     if (y == 0) Faces.Add(EMagicCubeFace::Left); // 左面
     if (y == Dimensions[1] - 1) Faces.Add(EMagicCubeFace::Right); // 右面
+    if (y != 0 && y != Dimensions[1] - 1) Faces.Add(EMagicCubeFace::Middle); // 非左非右面
     if (z == 0) Faces.Add(EMagicCubeFace::Bottom); // 底部
     if (z == Dimensions[2] - 1) Faces.Add(EMagicCubeFace::Top); // 顶部
+    if (z != 0 && z != Dimensions[2] - 1) Faces.Add(EMagicCubeFace::Equatorial); // 非顶非底面
 
     return Faces;
 }
@@ -542,10 +545,13 @@ FVector AMagicCubeActor::GetFaceNormal(EMagicCubeFace Face) const
     TMap<EMagicCubeFace, FVector> FaceNormals = {
         {EMagicCubeFace::Top, FVector(0, 0, 1)},
         {EMagicCubeFace::Bottom, FVector(0, 0, -1)},
+        {EMagicCubeFace::Equatorial, FVector(0, 0, 1)},
         {EMagicCubeFace::Front, FVector(-1, 0, 0)},
         {EMagicCubeFace::Back, FVector(1, 0, 0)},
+        {EMagicCubeFace::Standing, FVector(-1, 0, 0)},
         {EMagicCubeFace::Left, FVector(0, -1, 0)},
         {EMagicCubeFace::Right, FVector(0, 1, 0)},
+        {EMagicCubeFace::Middle, FVector(0, -1, 0)}
     };
 
     // 查找对应面的法向量，如果找不到则返回零向量
@@ -576,10 +582,13 @@ FVector AMagicCubeActor::GetFaceRotateDirection(EMagicCubeFace Face) const
     TMap<EMagicCubeFace, FVector> ClockRotateNormals = {
         {EMagicCubeFace::Top, FVector(0, 1, 0)},
         {EMagicCubeFace::Bottom, FVector(0, -1, 0)},
+        {EMagicCubeFace::Equatorial, FVector(0, 1, 0)},
         {EMagicCubeFace::Front, FVector(0, 0, -1)},
         {EMagicCubeFace::Back, FVector(0, 0, 1)},
+        {EMagicCubeFace::Standing, FVector(0, 0, -1)},
         {EMagicCubeFace::Left, FVector(1, 0, 0)},
         {EMagicCubeFace::Right, FVector(-1, 0, 0)},
+        {EMagicCubeFace::Middle, FVector(1, 0, 0)}
     };
 
     // 查找对应面的顺时针旋转轴向量，如果找不到则返回零向量
@@ -604,7 +613,7 @@ EMagicCubeFace AMagicCubeActor::GetOppositeFace(EMagicCubeFace Face) const
         {EMagicCubeFace::Front, EMagicCubeFace::Back},
         {EMagicCubeFace::Back, EMagicCubeFace::Front},
         {EMagicCubeFace::Left, EMagicCubeFace::Right},
-        {EMagicCubeFace::Right, EMagicCubeFace::Left},
+        {EMagicCubeFace::Right, EMagicCubeFace::Left}
     };
 
     // 查找对应面的反面，如果找不到则返回原面
@@ -626,10 +635,13 @@ ECubeAxis AMagicCubeActor::GetRotateAxis(EMagicCubeFace Face) const
     TMap<EMagicCubeFace, ECubeAxis> FaceRotateAxis = {
         {EMagicCubeFace::Top, ECubeAxis::Z},
         {EMagicCubeFace::Bottom, ECubeAxis::Z},
+        {EMagicCubeFace::Equatorial, ECubeAxis::Z},
         {EMagicCubeFace::Front, ECubeAxis::X},
         {EMagicCubeFace::Back, ECubeAxis::X},
+        {EMagicCubeFace::Standing, ECubeAxis::X},
         {EMagicCubeFace::Left, ECubeAxis::Y},
         {EMagicCubeFace::Right, ECubeAxis::Y},
+        {EMagicCubeFace::Middle, ECubeAxis::Y}
     };
 
     // 查找对应面的旋转轴，如果找不到则返回X轴
@@ -651,10 +663,13 @@ int32 AMagicCubeActor::GetLayerIndex(EMagicCubeFace Face) const
     TMap<EMagicCubeFace, int32> FaceLayerIndex = {
         {EMagicCubeFace::Top, Dimensions[2] - 1},
         {EMagicCubeFace::Bottom, 0},
+        {EMagicCubeFace::Equatorial, Dimensions[2] - 2},
         {EMagicCubeFace::Front, 0},
         {EMagicCubeFace::Back, Dimensions[0] - 1},
+        {EMagicCubeFace::Standing, Dimensions[0] - 2},
         {EMagicCubeFace::Left, 0},
         {EMagicCubeFace::Right, Dimensions[1] - 1},
+        {EMagicCubeFace::Middle, Dimensions[1] - 2}
     };
 
     // 查找对应面的层索引，如果找不到则返回-1

@@ -41,7 +41,7 @@ ACustomPawn::ACustomPawn()
     bIsDraggingCube = false;
     TotalMouseMovement = FVector2D::ZeroVector;
     TotalDragDistance = 0.f;
-    DragThreshold = 15.f; // 设置拖动阈值
+    DragThreshold = 18.f; // 设置拖动阈值
     bThresholdReached = false; // 初始化阈值是否达到标志
     CurrentRotationAngle = 0.f; // 初始化当前旋转角度
 
