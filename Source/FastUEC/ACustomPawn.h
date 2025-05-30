@@ -43,14 +43,20 @@ private:
     void OnLeftMousePressedCube();
     void OnLeftMouseReleasedCube();
 
-    // 触摸开始事件
-    void OnTouchStarted(ETouchIndex::Type FingerIndex, FVector Location);
-    // 触摸结束事件
-    void OnTouchEnded(ETouchIndex::Type FingerIndex, FVector Location);
-    // 触摸移动事件
+    void OnTouchPressed(ETouchIndex::Type FingerIndex, FVector Location);
     void OnTouchMoved(ETouchIndex::Type FingerIndex, FVector Location);
+    void OnTouchReleased(ETouchIndex::Type FingerIndex, FVector Location);
+
+    // 解耦后的核心函数
+    bool DetectMagicCubeHit(const FVector2D& ScreenPosition, AMagicCubeActor*& OutMagicCube, TArray<EMagicCubeFace>& OutCachedFaces, TArray<EMagicCubeFace>& OutCachedTargetFaces);
+    void BeginDrag(const FVector2D& InitialPosition);
+    void UpdateDrag(const FVector2D& CurrentPosition);
+    void EndDrag();
 
 private:
+    // 玩家控制器
+    APlayerController* PC;
+    
     // 鼠标拖拽状态
     bool bIsDraggingCube;
     FVector2D TotalMouseMovement;
@@ -61,6 +67,7 @@ private:
     // 拖动阈值
     float DragThreshold;
     bool bThresholdReached;
+    float tempDeltaTime;
 
     // 是否击中魔方
     bool bIsMagicCubeHit;
@@ -74,12 +81,6 @@ private:
     // 缓存击中的魔方块目标面集合 (用于计算旋转方向)
     EMagicCubeFace RotationFace; // 确定旋转的面
     TArray<EMagicCubeFace> CachedTargetFaces;
-
-    // 触摸状态
-    bool bIsTouching;
-    FVector2D InitialTouchPosition;
-    bool bIsTwoFingerTouching; // 是否双指触碰
-    FVector2D InitialSecondTouchPosition; // 第二个触摸点初始位置
 
 public:
     // 摄像机相关
