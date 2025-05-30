@@ -162,11 +162,8 @@ int32 AMagicCubeActor::GetLinearIndex(int32 x, int32 y, int32 z) const
 
 void AMagicCubeActor::RotateLayer(ECubeAxis Axis, int32 LayerIndex, float Degrees)
 {
-    UE_LOG(LogTemp, Warning, TEXT("RotateLayer called: Axis=%d, LayerIndex=%d, Degrees=%f"), static_cast<int32>(Axis), LayerIndex, Degrees);
-    
     if (FMath::Abs(CurrentRotation.RemainingDegrees) > KINDA_SMALL_NUMBER)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Rotation in progress. Ignoring new command."));
         return;
     }
     
@@ -174,7 +171,6 @@ void AMagicCubeActor::RotateLayer(ECubeAxis Axis, int32 LayerIndex, float Degree
     int32 MaxLayer = Dimensions[DimIndex] - 1;
     if (LayerIndex < 0 || LayerIndex > MaxLayer)
     {
-        UE_LOG(LogTemp, Warning, TEXT("LayerIndex %d out of bounds (max %d)"), LayerIndex, MaxLayer);
         return;
     }
     
@@ -182,7 +178,6 @@ void AMagicCubeActor::RotateLayer(ECubeAxis Axis, int32 LayerIndex, float Degree
     CurrentRotation.Layer = LayerIndex;
     CurrentRotation.RemainingDegrees = Degrees;
     CollectLayerInstances(Axis, LayerIndex, CurrentRotation.AffectedInstances);
-    UE_LOG(LogTemp, Warning, TEXT("Collected %d instances for rotation."), CurrentRotation.AffectedInstances.Num());
 }
 
 void AMagicCubeActor::SetLayerRotation(ECubeAxis Axis, int32 Layer, float Angle)
@@ -413,12 +408,10 @@ void AMagicCubeActor::InitializeTopParts()
     TopPartInitialTransforms.Empty();
     
     int32 ExpectedCount = Dimensions[0] * Dimensions[1];
-    UE_LOG(LogTemp, Warning, TEXT("顶面格子数：%d"), ExpectedCount);
     
     int32 MeshCount = TopPartMeshes.Num();
     if (MeshCount < ExpectedCount)
     {
-        UE_LOG(LogTemp, Warning, TEXT("TopPartMeshes 配置不足，期望 %d 个，但只有 %d 个将被创建。"), ExpectedCount, MeshCount);
     }
     
     if (bAutoAdjustTopPart)
@@ -433,7 +426,6 @@ void AMagicCubeActor::InitializeTopParts()
             TopPartScale = FVector(UniformScale);
             float ScaledHalfHeight = (Extent.Z * UniformScale) * 0.5f;
             TopPartVerticalOffset = BlockSize * 0.5f + ScaledHalfHeight;
-            UE_LOG(LogTemp, Warning, TEXT("自动调整顶面部件：Scale=%f, VerticalOffset=%f"), UniformScale, TopPartVerticalOffset);
         }
     }
     
@@ -460,7 +452,6 @@ void AMagicCubeActor::InitializeTopParts()
                     TopPartInitialTransforms.Add(PartComp->GetRelativeTransform());
                     PartComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
                     // PartComp->SetCollisionResponseToAllChannels(ECR_Ignore);
-                    UE_LOG(LogTemp, Warning, TEXT("生成顶面部件 %d 在位置: %s"), Index, *PartPos.ToString());
                 }
             }
         }
@@ -561,7 +552,6 @@ FVector AMagicCubeActor::GetFaceNormal(EMagicCubeFace Face) const
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("No normal defined for face %d"), static_cast<int32>(Face));
         return FVector::ZeroVector; // 返回零向量表示错误
     }
 }
@@ -598,7 +588,6 @@ FVector AMagicCubeActor::GetFaceRotateDirection(EMagicCubeFace Face) const
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("No clockwise rotation axis defined for face %d"), static_cast<int32>(Face));
         return FVector::ZeroVector; // 返回零向量表示错误
     }
 }
@@ -623,7 +612,6 @@ EMagicCubeFace AMagicCubeActor::GetOppositeFace(EMagicCubeFace Face) const
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("No opposite face defined for face %d"), static_cast<int32>(Face));
         return Face; // 返回原面表示错误
     }
 }
@@ -651,7 +639,6 @@ ECubeAxis AMagicCubeActor::GetRotateAxis(EMagicCubeFace Face) const
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("No rotate axis defined for face %d"), static_cast<int32>(Face));
         return ECubeAxis::X; // 返回X轴表示错误或未定义
     }
 }
@@ -679,7 +666,6 @@ int32 AMagicCubeActor::GetLayerIndex(EMagicCubeFace Face) const
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("No layer index defined for face %d"), static_cast<int32>(Face));
         return -1; // 返回-1表示错误或未定义
     }
 }

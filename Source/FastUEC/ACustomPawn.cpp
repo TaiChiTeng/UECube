@@ -114,14 +114,7 @@ void ACustomPawn::OnLeftMousePressedCube()
     float MouseX, MouseY;
     if (PC && PC->GetMousePosition(MouseX, MouseY))
     {
-        FString MousePos = FString::Printf(TEXT("Mouse Position: X=%.2f, Y=%.2f"), MouseX, MouseY);
-        GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, MousePos);
-        //UE_LOG(LogTemp, Warning, TEXT("%s"), *MousePos);
         BeginDrag(FVector2D(MouseX, MouseY));
-    }
-    else
-    {
-        //UE_LOG(LogTemp, Error, TEXT("Failed to get mouse position or PC is null!"));
     }
 }
 
@@ -233,29 +226,6 @@ bool ACustomPawn::DetectMagicCubeHit(const FVector2D& ScreenPosition, AMagicCube
                 CachedTargetFaces.Remove(HitFace);
                 CachedTargetFaces.Remove(OppositeFace);
 
-                // 构造归属面集合字符串
-                FString FaceNames;
-                for (EMagicCubeFace Face : CachedFaces)
-                {
-                    FaceNames += StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(Face)) + TEXT(" ");
-                }
-
-                // 构造目标面集合字符串
-                FString TargetFaceNames;
-                for (EMagicCubeFace Face : CachedTargetFaces)
-                {
-                    TargetFaceNames += StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(Face)) + TEXT(" ");
-                }
-
-                // 打印信息
-                FString Message = FString::Printf(TEXT("点击到魔方块，所属魔方Actor: %s，块索引: %d，归属面集合: %s\n射线击中面: %s\n射线击中面的反面: %s\n目标面集合: %s"),
-                    *CachedMagicCube->GetName(), BlockIndex, *FaceNames,
-                    *StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(HitFace)),
-                    *StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(OppositeFace)),
-                    *TargetFaceNames);
-                GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, Message);
-                //UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
-
                 // 设置输出参数
                 OutMagicCube = CachedMagicCube;
                 OutCachedFaces = CachedFaces;
@@ -289,16 +259,6 @@ void ACustomPawn::BeginDrag(const FVector2D& InitialPosition)
         CachedFaces = HitFaces;
         CachedTargetFaces = HitTargetFaces;
         bIsDraggingCube = true; // 只有当击中魔方时才设置为true
-
-        FString Message = FString::Printf(TEXT("Begin Drag - 成功击中魔方!"));
-        GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, Message);
-        //UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
-    }
-    else
-    {
-        FString Message = FString::Printf(TEXT("Begin Drag - 未击中魔方!"));
-        GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, Message);
-        //UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
     }
 }
 
@@ -306,11 +266,6 @@ void ACustomPawn::UpdateDrag(const FVector2D& CurrentPosition)
 {
     if (!bIsMagicCubeHit || !bIsDraggingCube)
     {
-        FString Message = FString::Printf(TEXT("UpdateDrag - 条件未满足，退出 (bIsMagicCubeHit=%s, bIsDraggingCube=%s)"),
-            bIsMagicCubeHit ? TEXT("true") : TEXT("false"),
-            bIsDraggingCube ? TEXT("true") : TEXT("false"));
-        GEngine->AddOnScreenDebugMessage(-1, tempDeltaTime, FColor::Red, Message);
-        //UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
         return;
     }
 
@@ -320,19 +275,10 @@ void ACustomPawn::UpdateDrag(const FVector2D& CurrentPosition)
     TotalDragDistance += MouseDelta.Size();
     InitialMousePosition = CurrentPosition;
 
-    // 打印当前鼠标位置和位移信息
-    FString MouseInfo = FString::Printf(TEXT("CurrentPosition: X=%.2f, Y=%.2f, MouseDelta: X=%.2f, Y=%.2f, TotalDragDistance: %.2f"),
-        CurrentPosition.X, CurrentPosition.Y, MouseDelta.X, MouseDelta.Y, TotalDragDistance);
-    GEngine->AddOnScreenDebugMessage(-1, tempDeltaTime, FColor::Cyan, MouseInfo);
-    //UE_LOG(LogTemp, Warning, TEXT("%s"), *MouseInfo);
-
     // 检查是否达到阈值
     if (!bThresholdReached && TotalDragDistance >= DragThreshold)
     {
         bThresholdReached = true;
-        FString Message = FString::Printf(TEXT("鼠标拖动已经达到检测阈值"));
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, Message);
-        //UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
 
         // 获取鼠标位移向量，不再标准化
         FVector2D MouseMovementVector = TotalMouseMovement;
@@ -348,7 +294,6 @@ void ACustomPawn::UpdateDrag(const FVector2D& CurrentPosition)
         FVector2D MagicCubeCenterScreenSpace;
         if (!UGameplayStatics::ProjectWorldToScreen(PC, MagicCubeCenter, MagicCubeCenterScreenSpace, false))
         {
-            //UE_LOG(LogTemp, Warning, TEXT("魔方中心世界坐标到屏幕坐标转换失败！"));
             return;
         }
 
@@ -377,12 +322,6 @@ void ACustomPawn::UpdateDrag(const FVector2D& CurrentPosition)
                 // 使用点积的绝对值
                 float DotProductAbs = FMath::Abs(DotProduct);
 
-                // 打印当前面的点积绝对值
-                FString FaceName = StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(Face));
-                FString DotProductMessage = FString::Printf(TEXT("  面: %s, 点积绝对值: %.2f"), *FaceName, DotProductAbs);
-                GEngine->AddOnScreenDebugMessage(-1, tempDeltaTime, FColor::Blue, DotProductMessage);
-                //UE_LOG(LogTemp, Warning, TEXT("%s"), *DotProductMessage);
-
                 // 更新最大点积绝对值和对应的面
                 if (DotProductAbs > MaxDotProductAbs)
                 {
@@ -390,17 +329,7 @@ void ACustomPawn::UpdateDrag(const FVector2D& CurrentPosition)
                     RotationFace = Face;
                 }
             }
-            else
-            {
-                //UE_LOG(LogTemp, Warning, TEXT("世界坐标到屏幕坐标转换失败！"));
-            }
         }
-
-        // 打印旋转面
-        FString RotationFaceName = StaticEnum<EMagicCubeFace>()->GetNameStringByValue(static_cast<int64>(RotationFace));
-        FString RotationFaceMessage = FString::Printf(TEXT("旋转面: %s, 最大点积绝对值: %.2f"), *RotationFaceName, MaxDotProductAbs);
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Purple, RotationFaceMessage);
-        //UE_LOG(LogTemp, Warning, TEXT("%s"), *RotationFaceMessage);
     }
     // 达到阈值后处理旋转
     else if (bThresholdReached)
@@ -449,13 +378,6 @@ void ACustomPawn::UpdateDrag(const FVector2D& CurrentPosition)
         // 设置图层旋转
         int32 LayerIndex = CachedMagicCube->GetLayerIndex(RotationFace);
         CachedMagicCube->SetLayerRotation(RotateAxis, LayerIndex, CurrentRotationAngle);
-
-        // 打印实时旋转信息
-        FString RotateInfo = FString::Printf(TEXT("实时旋转 - 轴: %d, 层: %d, 角度: %.2f"),
-                                            static_cast<int32>(RotateAxis),
-                                            LayerIndex,
-                                            CurrentRotationAngle);
-        GEngine->AddOnScreenDebugMessage(-1, tempDeltaTime, FColor::Emerald, RotateInfo);
     }
 }
 
@@ -463,15 +385,9 @@ void ACustomPawn::EndDrag()
 {
     if (bIsDraggingCube && bIsMagicCubeHit && CachedMagicCube)
     {
-        FString Message;
-        FColor TextColor;
-
         // 根据是否达到阈值设置不同的消息和颜色
         if (bThresholdReached)
         {
-            Message = FString::Printf(TEXT("拖拽结束，累计鼠标位移: X=%.2f, Y=%.2f, 累计距离: %.2f"), TotalMouseMovement.X, TotalMouseMovement.Y, TotalDragDistance);
-            TextColor = FColor::Cyan;
-
             // 旋转回弹
             ECubeAxis RotateAxis = CachedMagicCube->GetRotateAxis(RotationFace);
             int32 LayerIndex = CachedMagicCube->GetLayerIndex(RotationFace);
@@ -487,18 +403,11 @@ void ACustomPawn::EndDrag()
         }
         else
         {
-            Message = FString::Printf(TEXT("拖动距离过小不触发魔方旋转交互，累计鼠标位移: X=%.2f, Y=%.2f, 累计距离: %.2f"), TotalMouseMovement.X, TotalMouseMovement.Y, TotalDragDistance);
-            TextColor = FColor::Orange;
-
             // 重置图层旋转
             ECubeAxis RotateAxis = CachedMagicCube->GetRotateAxis(RotationFace);
             int32 LayerIndex = CachedMagicCube->GetLayerIndex(RotationFace);
             CachedMagicCube->SetLayerRotation(RotateAxis, LayerIndex, 0.f);
         }
-
-        // 打印最终的累计位移和距离
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, TextColor, Message);
-        //UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
 
         // 重置拖拽状态
         bIsDraggingCube = false;
